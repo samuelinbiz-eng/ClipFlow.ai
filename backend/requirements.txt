@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+python-multipart
+yt-dlp
+faster-whisper
+av>=11,<19
+opencv-python-headless>=4.8,<5
+groq
+firebase-admin

@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+dist/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+cookies*.txt
+backend/temp/
+backend/output/
+backend/data/
