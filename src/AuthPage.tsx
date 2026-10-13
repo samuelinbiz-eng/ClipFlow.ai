@@ -95,9 +95,9 @@ export default function AuthPage({ mode }: AuthPageProps) {
   return (
     <main className="app-shell auth-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="ClipFlow AI">
+        <a className="brand" href="/" aria-label="GemClip">
           <span className="brand-mark"><Clapperboard size={19} /></span>
-          <span>clipflow<span className="brand-ai">.ai</span></span>
+          <span>GemClip</span>
         </a>
         <span className="local-badge"><span className="live-dot" /> Espace sécurisé</span>
       </header>
@@ -105,7 +105,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
       <section className="auth-content">
         <article className="auth-card">
           <span className="auth-icon"><Sparkles size={21} /></span>
-          <p className="auth-eyebrow">CLIPFLOW AI</p>
+          <p className="auth-eyebrow">GEMCLIP</p>
           <h1>{isRegister ? 'Créez votre compte' : 'Ravi de vous revoir'}</h1>
           <p className="auth-intro">
             {isRegister
@@ -200,7 +200,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
           {firebaseConfigured && <p className="auth-note"><LockKeyhole size={13} /> Connexion sécurisée par Firebase.</p>}
         </article>
       </section>
-      <footer>ClipFlow AI <span>·</span> Vos vidéos sont traitées sur cette machine.</footer>
+      <footer>GemClip <span>·</span> Vos vidéos sont traitées par GemClip.</footer>
     </main>
   )
 }

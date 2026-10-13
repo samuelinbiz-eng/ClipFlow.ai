@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, Clapperboard, ShieldCheck } from 'lucide-react'
 import type { User } from 'firebase/auth'
 import { getFirebaseAuth } from './firebase'
+import { apiUrl } from './api'
 
 type PayPalConfig = {
   client_id: string
@@ -54,7 +55,7 @@ export default function SubscriptionPage({ user }: { user: User }) {
     let cancelled = false
     async function loadConfig() {
       try {
-        const response = await fetch('/api/paypal/config')
+        const response = await fetch(apiUrl('/api/paypal/config'))
         const result = await response.json()
         if (!response.ok) throw new Error(responseError(result.detail, response.status))
         if (!cancelled) setConfig(result as PayPalConfig)
@@ -76,7 +77,7 @@ export default function SubscriptionPage({ user }: { user: User }) {
     const script = document.createElement('script')
     script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(config.client_id)}&vault=true&intent=subscription&components=buttons`
     script.async = true
-    script.dataset.clipflowPaypal = 'true'
+    script.dataset.gemclipPaypal = 'true'
     script.dataset.sdkIntegrationSource = 'button-factory'
     script.onload = () => {
       if (cancelled || !window.paypal || !buttonContainer.current) return
@@ -95,7 +96,7 @@ export default function SubscriptionPage({ user }: { user: User }) {
               throw new Error('Connectez-vous pour vérifier votre abonnement.')
             }
             const token = await currentUser.getIdToken()
-            const response = await fetch('/api/paypal/verify', {
+            const response = await fetch(apiUrl('/api/paypal/verify'), {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -105,7 +106,7 @@ export default function SubscriptionPage({ user }: { user: User }) {
             })
             const result = await response.json()
             if (!response.ok) throw new Error(responseError(result.detail, response.status))
-            setMessage('Votre abonnement ClipFlow AI est actif. Vous avez maintenant 100 jetons par jour.')
+            setMessage('Votre abonnement GemClip est actif. Vous avez maintenant 100 jetons par jour.')
           } catch (verifyError) {
             setError(verifyError instanceof Error ? verifyError.message : 'La vérification PayPal a échoué.')
           } finally {
@@ -138,9 +139,9 @@ export default function SubscriptionPage({ user }: { user: User }) {
   return (
     <main className="app-shell subscription-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Retour à ClipFlow AI">
+        <a className="brand" href="/" aria-label="Retour à GemClip">
           <span className="brand-mark"><Clapperboard size={19} /></span>
-          <span>clipflow<span className="brand-ai">.ai</span></span>
+          <span>GemClip</span>
         </a>
         <a className="subscription-back" href="/"><ArrowLeft size={15} /> Retour</a>
       </header>
@@ -152,12 +153,12 @@ export default function SubscriptionPage({ user }: { user: User }) {
               <span className="subscription-icon"><Check size={24} /></span>
               <h1>Abonnement activé</h1>
               <p>{message}</p>
-              <a className="subscription-continue" href="/">Continuer vers ClipFlow AI</a>
+              <a className="subscription-continue" href="/">Continuer vers GemClip</a>
             </div>
           ) : (
             <>
               <span className="subscription-icon"><Clapperboard size={23} /></span>
-              <p className="subscription-eyebrow">CLIPFLOW AI · PREMIUM</p>
+              <p className="subscription-eyebrow">GEMCLIP · PREMIUM</p>
               <h1>Un Short, en quelques clics.</h1>
               <p className="subscription-intro">Accédez à la création vidéo assistée par IA avec une facturation simple, chaque mois.</p>
 
@@ -181,12 +182,12 @@ export default function SubscriptionPage({ user }: { user: User }) {
               <p className="subscription-legal">
                 Paiement traité de manière sécurisée par PayPal. L’abonnement est renouvelé automatiquement chaque mois ; vous pouvez le gérer ou l’annuler depuis votre compte PayPal.
               </p>
-              <p className="subscription-secure"><ShieldCheck size={14} /> Vos données de paiement ne sont pas stockées par ClipFlow AI.</p>
+              <p className="subscription-secure"><ShieldCheck size={14} /> Vos données de paiement ne sont pas stockées par GemClip.</p>
             </>
           )}
         </article>
       </section>
-      <footer>ClipFlow AI <span>·</span> Paiement sécurisé avec PayPal</footer>
+      <footer>GemClip <span>·</span> Paiement sécurisé avec PayPal</footer>
     </main>
   )
 }

@@ -81,6 +81,7 @@ def _initialize() -> None:
                     subtitle_color TEXT NOT NULL,
                     subtitle_size TEXT NOT NULL,
                     subtitle_position TEXT NOT NULL,
+                    subtitle_font TEXT NOT NULL DEFAULT 'Arial',
                     credit_cost INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -89,6 +90,14 @@ def _initialize() -> None:
                     ON task_history(user_id, created_at DESC);
                 """
             )
+            task_history_columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(task_history)")
+            }
+            if "subtitle_font" not in task_history_columns:
+                connection.execute(
+                    "ALTER TABLE task_history ADD COLUMN subtitle_font TEXT NOT NULL DEFAULT 'Arial'"
+                )
             connection.execute(
                 """
                 UPDATE credit_reservations
@@ -200,7 +209,7 @@ def credit_balance(
     subscription_active: bool | None = None,
 ) -> dict[str, Any]:
     is_plus = (
-        _sync_subscription(user_id)
+        _stored_subscription_active(user_id)
         if subscription_active is None
         else subscription_active
     )
@@ -223,6 +232,15 @@ def credit_balance(
         "remaining": max(0, allowance - int(spent)),
         "resets_at": "00:00 UTC",
     }
+
+
+def _stored_subscription_active(user_id: str) -> bool:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT status FROM user_subscriptions WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    return row is not None and row["status"] == "ACTIVE"
 
 
 def reserve_credits(
@@ -302,6 +320,7 @@ def record_task(
     subtitle_color: str,
     subtitle_size: str,
     subtitle_position: str,
+    subtitle_font: str = "Arial",
     credit_cost: int,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
@@ -311,8 +330,8 @@ def record_task(
             INSERT INTO task_history (
                 task_id, user_id, source, status, progress, stage, duration_seconds,
                 resolution, aspect_ratio, subtitles, subtitle_color, subtitle_size,
-                subtitle_position, credit_cost, created_at, updated_at
-            ) VALUES (?, ?, ?, 'queued', 0, 'En attente', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                subtitle_position, subtitle_font, credit_cost, created_at, updated_at
+            ) VALUES (?, ?, ?, 'queued', 0, 'En attente', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -325,6 +344,7 @@ def record_task(
                 subtitle_color,
                 subtitle_size,
                 subtitle_position,
+                subtitle_font,
                 credit_cost,
                 now,
                 now,
@@ -367,7 +387,7 @@ def list_task_history(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
             SELECT task_id, source, status, progress, stage, error, video_url,
                    title AS titre, explanation AS explication, duration_seconds,
                    resolution, aspect_ratio, subtitles, subtitle_color, subtitle_size,
-                   subtitle_position, credit_cost, created_at, updated_at
+                   subtitle_position, subtitle_font, credit_cost, created_at, updated_at
             FROM task_history
             WHERE user_id = ?
             ORDER BY created_at DESC
@@ -385,7 +405,7 @@ def get_task_history(task_id: str, user_id: str) -> dict[str, Any] | None:
             SELECT task_id, source, status, progress, stage, error, video_url,
                    title AS titre, explanation AS explication, duration_seconds,
                    resolution, aspect_ratio, subtitles, subtitle_color, subtitle_size,
-                   subtitle_position, credit_cost, created_at, updated_at
+                   subtitle_position, subtitle_font, credit_cost, created_at, updated_at
             FROM task_history
             WHERE task_id = ? AND user_id = ?
             """,
@@ -404,4 +424,3 @@ def delete_task_history(task_id: str, user_id: str) -> bool:
             (task_id, user_id),
         )
         return cursor.rowcount > 0
-

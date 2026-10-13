@@ -11,7 +11,7 @@ import {
 import type { User } from 'firebase/auth'
 import { getFirebaseFirestore } from './firebase'
 
-export type TaskStatus = 'queued' | 'processing' | 'completed' | 'failed'
+export type TaskStatus = 'queued' | 'processing' | 'review' | 'completed' | 'failed'
 
 export type ShortRecord = {
   task_id: string
@@ -30,6 +30,7 @@ export type ShortRecord = {
   subtitle_color: string
   subtitle_size: string
   subtitle_position: string
+  subtitle_font: string
   credit_cost: number
   created_at: string
   updated_at: string
@@ -138,6 +139,7 @@ export function subscribeUserShorts(
           subtitle_color: data.subtitle_color || 'yellow',
           subtitle_size: data.subtitle_size || 'medium',
           subtitle_position: data.subtitle_position || 'bottom',
+          subtitle_font: data.subtitle_font || 'Arial',
           credit_cost: Number(data.credit_cost) || 0,
           created_at: data.created_at || new Date().toISOString(),
           updated_at: data.updated_at || data.created_at || new Date().toISOString(),
@@ -172,6 +174,7 @@ export function subscribeUserShorts(
               subtitle_color: data.subtitle_color || 'yellow',
               subtitle_size: data.subtitle_size || 'medium',
               subtitle_position: data.subtitle_position || 'bottom',
+              subtitle_font: data.subtitle_font || 'Arial',
               credit_cost: Number(data.credit_cost) || 0,
               created_at: data.created_at || new Date().toISOString(),
               updated_at: data.updated_at || data.created_at || new Date().toISOString(),

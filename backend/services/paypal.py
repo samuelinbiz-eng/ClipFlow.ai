@@ -11,7 +11,7 @@ from typing import Any
 
 PRICE = "5.99"
 CURRENCY = "USD"
-PLAN_NAME = "ClipFlow AI Monthly"
+PLAN_NAME = "GemClip Monthly"
 PAYPAL_CLIENT_ID = "BAAkTxTBq-s_NfKrpiIxNqhGAsTG7Po0KhQaqKzfsunS4btQhp49Xg0nuxePRSqCtY7pS5Mf_DHVtU06ZQ"
 PAYPAL_PLAN_ID = "P-5DV679072B532735YNLGQKHY"
 
@@ -145,7 +145,7 @@ def _create_monthly_plan() -> str:
         "/v1/catalogs/products",
         {
             "name": PLAN_NAME,
-            "description": "Abonnement mensuel ClipFlow AI",
+            "description": "Abonnement mensuel GemClip",
             "type": "SERVICE",
             "category": "SOFTWARE",
         },
@@ -160,7 +160,7 @@ def _create_monthly_plan() -> str:
         {
             "product_id": product_id,
             "name": PLAN_NAME,
-            "description": "Accès ClipFlow AI facturé chaque mois",
+            "description": "Accès GemClip facturé chaque mois",
             "status": "ACTIVE",
             "billing_cycles": [
                 {
@@ -198,9 +198,9 @@ def verify_subscription(
         f"/v1/billing/subscriptions/{urllib.parse.quote(subscription_id, safe='')}",
     )
     if expected_user_id is not None and subscription.get("custom_id") != expected_user_id:
-        raise ValueError("Cet abonnement PayPal n’appartient pas à ce compte ClipFlow AI.")
+        raise ValueError("Cet abonnement PayPal n’appartient pas à ce compte GemClip.")
     if subscription.get("plan_id") != config["plan_id"]:
-        raise ValueError("Cet abonnement ne correspond pas au plan mensuel ClipFlow AI.")
+        raise ValueError("Cet abonnement ne correspond pas au plan mensuel GemClip.")
     status = subscription.get("status")
     if status != "ACTIVE":
         raise ValueError(f"Le paiement n'a pas activé l'abonnement (statut : {status}).")

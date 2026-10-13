@@ -1,0 +1,12 @@
+.git
+.venv/
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+cookies*.txt
+backend/data/
+backend/output/
+backend/temp/

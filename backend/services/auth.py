@@ -12,7 +12,7 @@ from firebase_admin.exceptions import FirebaseError
 from google.auth.exceptions import DefaultCredentialsError
 from google.auth.credentials import AnonymousCredentials
 
-_APP_NAME = "clipflow"
+_APP_NAME = "gemclip"
 _APP_LOCK = threading.Lock()
 _DEFAULT_PROJECT_ID = "clipflow-ai-bba29"
 _CHECK_REVOKED = False

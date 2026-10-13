@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model & Security Architecture - ClipFlow AI
+// Assumed Data Model & Security Architecture - GemClip
 // ===============================================================
 //
 // Root Database: Cloud Firestore
@@ -24,7 +24,7 @@ rules_version = '2';
 //
 // Subcollection: /users/{userId}/shorts/{shortId}
 // Document ID: shortId (unique task ID / UUID)
-// Description: Short generation history and status records for ClipFlow AI.
+// Description: Short generation history and status records for GemClip.
 // Fields:
 //   - task_id: string (required on create, matches shortId, 1-128 chars, immutable)
 //   - status: string (required, 'queued' | 'processing' | 'completed' | 'failed')
