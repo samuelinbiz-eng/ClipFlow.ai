@@ -63,6 +63,30 @@ def _initialize() -> None:
                 );
                 CREATE INDEX IF NOT EXISTS credits_daily_user_idx
                     ON credit_reservations(user_id, credit_date, status);
+                CREATE TABLE IF NOT EXISTS task_history (
+                    task_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    progress INTEGER NOT NULL DEFAULT 0,
+                    stage TEXT NOT NULL,
+                    error TEXT,
+                    video_url TEXT,
+                    title TEXT,
+                    explanation TEXT,
+                    duration_seconds INTEGER NOT NULL,
+                    resolution INTEGER NOT NULL,
+                    aspect_ratio TEXT NOT NULL,
+                    subtitles INTEGER NOT NULL,
+                    subtitle_color TEXT NOT NULL,
+                    subtitle_size TEXT NOT NULL,
+                    subtitle_position TEXT NOT NULL,
+                    credit_cost INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS task_history_user_date_idx
+                    ON task_history(user_id, created_at DESC);
                 """
             )
             connection.execute(
@@ -70,6 +94,16 @@ def _initialize() -> None:
                 UPDATE credit_reservations
                 SET status = 'refunded', updated_at = ?
                 WHERE status = 'reserved'
+                """,
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            connection.execute(
+                """
+                UPDATE task_history
+                SET status = 'failed', stage = 'Échec · serveur redémarré',
+                    error = 'Le serveur a redémarré pendant le traitement.',
+                    updated_at = ?
+                WHERE status IN ('queued', 'processing')
                 """,
                 (datetime.now(timezone.utc).isoformat(),),
             )
@@ -254,3 +288,120 @@ def settle_credits(task_id: str, succeeded: bool) -> None:
             """,
             (status, now, task_id),
         )
+
+
+def record_task(
+    *,
+    task_id: str,
+    user_id: str,
+    source: str,
+    duration_seconds: int,
+    resolution: int,
+    aspect_ratio: str,
+    subtitles: bool,
+    subtitle_color: str,
+    subtitle_size: str,
+    subtitle_position: str,
+    credit_cost: int,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            INSERT INTO task_history (
+                task_id, user_id, source, status, progress, stage, duration_seconds,
+                resolution, aspect_ratio, subtitles, subtitle_color, subtitle_size,
+                subtitle_position, credit_cost, created_at, updated_at
+            ) VALUES (?, ?, ?, 'queued', 0, 'En attente', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                user_id,
+                source,
+                duration_seconds,
+                resolution,
+                aspect_ratio,
+                int(subtitles),
+                subtitle_color,
+                subtitle_size,
+                subtitle_position,
+                credit_cost,
+                now,
+                now,
+            ),
+        )
+
+
+def update_task_history(task_id: str, values: dict[str, Any]) -> None:
+    fields = {
+        "status",
+        "progress",
+        "stage",
+        "error",
+        "video_url",
+        "titre",
+        "explication",
+    }
+    updates = {key: value for key, value in values.items() if key in fields}
+    if not updates:
+        return
+    columns = {
+        "titre": "title",
+        "explication": "explanation",
+    }
+    assignments = [f"{columns.get(key, key)} = ?" for key in updates]
+    parameters = list(updates.values())
+    assignments.append("updated_at = ?")
+    parameters.extend((datetime.now(timezone.utc).isoformat(), task_id))
+    with closing(_connect()) as connection:
+        connection.execute(
+            f"UPDATE task_history SET {', '.join(assignments)} WHERE task_id = ?",
+            parameters,
+        )
+
+
+def list_task_history(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            """
+            SELECT task_id, source, status, progress, stage, error, video_url,
+                   title AS titre, explanation AS explication, duration_seconds,
+                   resolution, aspect_ratio, subtitles, subtitle_color, subtitle_size,
+                   subtitle_position, credit_cost, created_at, updated_at
+            FROM task_history
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user_id, max(1, min(limit, 100))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_task_history(task_id: str, user_id: str) -> dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            """
+            SELECT task_id, source, status, progress, stage, error, video_url,
+                   title AS titre, explanation AS explication, duration_seconds,
+                   resolution, aspect_ratio, subtitles, subtitle_color, subtitle_size,
+                   subtitle_position, credit_cost, created_at, updated_at
+            FROM task_history
+            WHERE task_id = ? AND user_id = ?
+            """,
+            (task_id, user_id),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def delete_task_history(task_id: str, user_id: str) -> bool:
+    with closing(_connect()) as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM task_history
+            WHERE task_id = ? AND user_id = ?
+            """,
+            (task_id, user_id),
+        )
+        return cursor.rowcount > 0
+

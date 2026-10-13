@@ -1,5 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDPWursRFOSNwg8jiIC79cfM_53WpfhV2s',
@@ -23,8 +24,16 @@ export const firebaseConfigMessage = firebaseConfigured
   ? ''
   : `Firebase incomplet : renseignez dans .env : ${missingConfig.join(', ')}.`
 
-export function getFirebaseAuth() {
+export function getFirebaseApp() {
   if (!firebaseConfigured) throw new Error(firebaseConfigMessage)
-  const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
-  return getAuth(app)
+  return getApps().length ? getApp() : initializeApp(firebaseConfig)
 }
+
+export function getFirebaseAuth() {
+  return getAuth(getFirebaseApp())
+}
+
+export function getFirebaseFirestore() {
+  return getFirestore(getFirebaseApp())
+}
+

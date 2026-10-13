@@ -5,12 +5,28 @@ from pathlib import Path
 from backend.services.ai_analyzer import ClipSelection
 from backend.services.transcriber import Transcript, Word
 
+SUBTITLE_STYLES = {
+    "white": "&H00FFFFFF",
+    "yellow": "&H0000FFFF",
+    "cyan": "&H00FFD421",
+    "pink": "&H00D65AFF",
+}
+FONT_SIZES = {"small": 56, "medium": 72, "large": 90}
+POSITIONS = {"bottom": (2, 180), "center": (5, 0), "top": (8, 180)}
+
 
 def generate_ass(
     transcript: Transcript,
     selection: ClipSelection,
     output_path: Path,
+    color: str = "yellow",
+    size: str = "medium",
+    position: str = "bottom",
 ) -> Path:
+    if color not in SUBTITLE_STYLES or size not in FONT_SIZES or position not in POSITIONS:
+        raise ValueError("Style de sous-titres non pris en charge.")
+    subtitle_color = SUBTITLE_STYLES[color]
+    alignment, vertical_margin = POSITIONS[position]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     selected = [
         word
@@ -24,7 +40,7 @@ def generate_ass(
         start = max(word.start, selection.start_time) - selection.start_time
         end = min(word.end, selection.end_time) - selection.start_time
         caption = " ".join(
-            f"{{\\c&H00FFFF&\\b1}}{_escape_ass(item.text)}{{\\rDefault}}"
+            f"{{\\c{subtitle_color}&\\b1}}{_escape_ass(item.text)}{{\\rDefault}}"
             if item is word
             else _escape_ass(item.text)
             for item in group
@@ -46,7 +62,7 @@ def generate_ass(
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
             "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            "Style: Default,Arial,72,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,1,0,1,4,2,2,70,70,250,1",
+            f"Style: Default,Arial,{FONT_SIZES[size]},{subtitle_color},&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,1,0,1,4,2,{alignment},70,70,{vertical_margin},1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",

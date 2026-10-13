@@ -38,6 +38,12 @@ La page `/subscribe` utilise le bouton PayPal fourni et le plan `P-5DV679072B532
 
 Chaque compte reçoit 10 jetons par jour ; un abonnement Plus PayPal actif en donne 100. Une création coûte `plafond(durée en secondes / 30)` jetons, plus 1 jeton en 1080p (720p n'a pas de supplément). Les jetons se réinitialisent à minuit UTC. Ils sont réservés au lancement du traitement, consommés si la création réussit et remboursés automatiquement si elle échoue. Les soldes, abonnements et réservations sont conservés dans `backend/data/credits.sqlite3` (ignoré par Git) ; `CREDITS_DATABASE_PATH` peut remplacer cet emplacement.
 
+### Historique et sous-titres
+
+L'éditeur conserve les 50 dernières créations du compte connecté dans le même stockage SQLite : source, statut, durée, résolution, jetons dépensés et lien de téléchargement pour les vidéos terminées. L'historique reste disponible après rechargement ou redémarrage du backend.
+
+Dans **Options > Personnaliser les sous-titres**, choisissez la couleur (jaune, blanc, cyan ou rose), la taille (petite, moyenne ou grande) et la position (haut, centre ou bas). Ces réglages sont appliqués au rendu ASS/FFmpeg et mémorisés avec chaque création.
+
 ## Démarrage
 
 Dans un terminal, lancez le backend :
@@ -52,7 +58,7 @@ Dans un autre terminal, démarrez l'interface Vite :
 npm run dev
 ```
 
-Ouvrez l'adresse Vite affichée dans le terminal. Le proxy transmet `/api` et `/output` à FastAPI. Le premier lancement de Whisper télécharge le modèle choisi ; il peut donc prendre plus de temps.
+Ouvrez l'adresse Vite affichée dans le terminal. La page publique `/` présente ClipFlow AI ; connectez-vous ou inscrivez-vous pour accéder à l'éditeur. Le proxy transmet `/api` et `/output` à FastAPI. Le premier lancement de Whisper télécharge le modèle choisi ; il peut donc prendre plus de temps.
 
 Vous pouvez coller un lien YouTube ou importer une vidéo locale (MP4, MOV, MKV, WEBM, AVI ou MPEG, jusqu'à 2 Go). Whisper lit directement la piste audio de la vidéo, évitant un téléchargement audio ou une conversion MP3 intermédiaire. Au montage, OpenCV suit le visage échantillonné dans l'extrait pour le recadrage vertical; si aucun visage n'est détecté, le cadrage reste centré. FFmpeg conserve et synchronise la piste audio originale dans le Short.
 

@@ -1,10 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, Clapperboard, FileVideo2, Link2, LoaderCircle, LogOut, ShieldCheck, Sparkles } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Check,
+  Clapperboard,
+  Download,
+  FileVideo2,
+  History,
+  Link2,
+  LoaderCircle,
+  LogOut,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
 import AuthPage from './AuthPage'
 import SubscriptionPage from './SubscriptionPage'
 import { firebaseConfigMessage, getFirebaseAuth } from './firebase'
+import {
+  deleteShortFromFirestore,
+  saveShortToFirestore,
+  subscribeUserShorts,
+  syncExistingEntriesToFirestore,
+  syncUserProfile,
+} from './firestoreHistory'
+import type { ShortRecord } from './firestoreHistory'
+
 
 type Task = {
   task_id: string
@@ -15,7 +37,20 @@ type Task = {
   video_url: string | null
   titre: string | null
   explication: string | null
+  source?: string
+  duration_seconds?: number
+  resolution?: number
+  aspect_ratio?: string
+  subtitles?: boolean
+  subtitle_color?: string
+  subtitle_size?: string
+  subtitle_position?: string
+  credit_cost?: number
+  created_at?: string
+  updated_at?: string
 }
+
+type HistoryEntry = ShortRecord
 
 type CreditBalance = {
   plan: 'free' | 'plus'
@@ -32,6 +67,69 @@ class ApiError extends Error {
 }
 
 const steps = ['Vidéo', 'Transcription', 'Analyse IA', 'Sous-titres', 'Montage']
+
+function HomePage() {
+  return (
+    <main className="app-shell landing-shell">
+      <header className="topbar landing-nav">
+        <a className="brand" href="/" aria-label="ClipFlow AI accueil">
+          <span className="brand-mark"><Clapperboard size={19} /></span>
+          <span>clipflow<span className="brand-ai">.ai</span></span>
+        </a>
+        <nav className="landing-nav-actions" aria-label="Navigation principale">
+          <a className="landing-login" href="/login">Connexion</a>
+          <a className="landing-signup" href="/register">Créer un compte <ArrowUpRight size={15} /></a>
+        </nav>
+      </header>
+
+      <section className="landing-hero">
+        <div className="landing-copy">
+          <span className="landing-eyebrow"><Sparkles size={14} /> LE STUDIO SHORTS PROPULSÉ PAR L’IA</span>
+          <h1>Vos vidéos.<br /><span>Des Shorts qui accrochent.</span></h1>
+          <p className="landing-description">
+            Transformez une vidéo YouTube ou un fichier en clips verticaux sous-titrés.
+            L’IA repère le moment fort, ClipFlow s’occupe du montage.
+          </p>
+          <div className="landing-actions">
+            <a className="landing-primary" href="/register">Créer mon premier Short <ArrowUpRight size={17} /></a>
+            <span className="landing-free-note">10 jetons offerts chaque jour</span>
+          </div>
+          <div className="landing-points">
+            <span><Check size={15} /> Sélection intelligente</span>
+            <span><Check size={15} /> Sous-titres synchronisés</span>
+            <span><Check size={15} /> Prêt à télécharger</span>
+          </div>
+        </div>
+
+        <div className="landing-visual" aria-label="Aperçu d’un Short vertical généré">
+          <div className="landing-orbit landing-orbit-one" />
+          <div className="landing-orbit landing-orbit-two" />
+          <div className="landing-preview">
+            <div className="landing-preview-top"><span><span className="live-dot" /> APERÇU IA</span><span>9:16</span></div>
+            <div className="landing-preview-scene">
+              <span className="landing-scene-glow" />
+              <span className="landing-play"><ArrowUpRight size={22} /></span>
+              <span className="landing-caption">LE MOMENT<br /><strong>À RETENIR</strong></span>
+              <span className="landing-subtitle">« C’est là que tout change. »</span>
+            </div>
+            <div className="landing-preview-bottom">
+              <span>Clip sélectionné par l’IA</span>
+              <span className="landing-progress"><span /></span>
+            </div>
+          </div>
+          <div className="landing-float-card"><span className="landing-float-icon"><Check size={15} /></span><span><strong>Votre Short est prêt</strong><small>Sous-titres inclus</small></span></div>
+        </div>
+      </section>
+
+      <section className="landing-features" aria-label="Fonctionnalités">
+        <article><span>01</span><div><strong>Ajoutez une vidéo</strong><p>Collez un lien YouTube ou importez votre fichier.</p></div></article>
+        <article><span>02</span><div><strong>L’IA trouve le bon passage</strong><p>Un extrait captivant, sans montage manuel.</p></div></article>
+        <article><span>03</span><div><strong>Téléchargez votre Short</strong><p>Format vertical et sous-titres prêts à partager.</p></div></article>
+      </section>
+      <footer>ClipFlow AI <span>·</span> Le format court, simplement.</footer>
+    </main>
+  )
+}
 
 function SessionScreen({ loading, message }: { loading: boolean; message?: string }) {
   return (
@@ -130,6 +228,13 @@ async function fetchCredits(user: User): Promise<CreditBalance> {
   return result as CreditBalance
 }
 
+async function fetchHistory(user: User): Promise<HistoryEntry[]> {
+  const response = await authenticatedFetch(user, '/api/history')
+  const result = await response.json()
+  if (!response.ok) throw new ApiError(formatApiError(result.detail, response.status), response.status)
+  return result as HistoryEntry[]
+}
+
 function ClipWorkspace({ user }: { user: User }) {
   const [sourceType, setSourceType] = useState<'youtube' | 'file'>('youtube')
   const [url, setUrl] = useState('')
@@ -138,7 +243,14 @@ function ClipWorkspace({ user }: { user: User }) {
   const [aspectRatio, setAspectRatio] = useState('9:16')
   const [resolution, setResolution] = useState('1080')
   const [subtitles, setSubtitles] = useState(true)
+  const [subtitleColor, setSubtitleColor] = useState('yellow')
+  const [subtitleSize, setSubtitleSize] = useState('medium')
+  const [subtitlePosition, setSubtitlePosition] = useState('bottom')
   const [task, setTask] = useState<Task | null>(null)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [loggingOut, setLoggingOut] = useState(false)
@@ -166,6 +278,57 @@ function ClipWorkspace({ user }: { user: User }) {
         if (!cancelled) setCreditsLoading(false)
       })
     return () => { cancelled = true }
+  }, [user])
+
+  useEffect(() => {
+    void syncUserProfile(user)
+  }, [user])
+
+  useEffect(() => {
+    let cancelled = false
+    setHistoryLoading(true)
+    setHistoryError('')
+
+    // Abonnement temps réel à l'historique Firestore
+    const unsubscribe = subscribeUserShorts(
+      user.uid,
+      (firestoreEntries) => {
+        if (!cancelled) {
+          setHistory(firestoreEntries)
+          setHistoryLoading(false)
+        }
+      },
+      async (error) => {
+        if (cancelled) return
+        console.warn('Erreur Firestore, bascule vers le backend :', error)
+        try {
+          const backendEntries = await fetchHistory(user)
+          if (!cancelled) setHistory(backendEntries)
+        } catch (fetchError) {
+          if (!cancelled) {
+            setHistoryError(fetchError instanceof Error ? fetchError.message : 'Impossible de charger l’historique.')
+          }
+        } finally {
+          if (!cancelled) setHistoryLoading(false)
+        }
+      },
+    )
+
+    // Synchronisation automatique des créations existantes vers Firestore
+    void fetchHistory(user)
+      .then((backendEntries) => {
+        if (!cancelled && backendEntries?.length) {
+          void syncExistingEntriesToFirestore(user.uid, backendEntries)
+        }
+      })
+      .catch(() => {
+        // Ignorer si indisponible
+      })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [user])
 
   useEffect(() => {
@@ -202,6 +365,7 @@ function ClipWorkspace({ user }: { user: User }) {
     return () => { cancelled = true }
   }, [task?.status, user])
 
+
   useEffect(() => {
     if (!task || task.status === 'completed' || task.status === 'failed') return
     const poll = async () => {
@@ -213,20 +377,23 @@ function ClipWorkspace({ user }: { user: User }) {
           return
         }
         if (response.status === 404) {
-          setTask((current) =>
-            current?.task_id === task.task_id
-              ? {
-                  ...current,
-                  status: 'failed',
-                  stage: 'Échec',
-                  error: 'Cette tâche a été perdue après un redémarrage du backend. Relancez la création du Short.',
-                }
-              : current,
-          )
+          const failedTask: Task = {
+            ...task,
+            status: 'failed',
+            stage: 'Échec',
+            error: 'Cette tâche a été perdue après un redémarrage du backend. Relancez la création du Short.',
+            updated_at: new Date().toISOString(),
+          }
+          setTask(failedTask)
+          void saveShortToFirestore(user.uid, failedTask)
           return
         }
         if (!response.ok) throw new Error(`Le serveur a répondu ${response.status}.`)
-        setTask(await response.json() as Task)
+        const updatedTask = (await response.json()) as Task
+        setTask(updatedTask)
+        if (updatedTask.status === 'completed' || updatedTask.status === 'failed') {
+          void saveShortToFirestore(user.uid, updatedTask)
+        }
       } catch (error) {
         setFormError(error instanceof Error ? error.message : 'Impossible de contacter le backend.')
       }
@@ -262,6 +429,9 @@ function ClipWorkspace({ user }: { user: User }) {
         aspect_ratio: aspectRatio,
         resolution: Number(resolution),
         subtitles,
+        subtitle_color: subtitleColor,
+        subtitle_size: subtitleSize,
+        subtitle_position: subtitlePosition,
       }
       let response: Response
       if (sourceType === 'youtube') {
@@ -289,7 +459,7 @@ function ClipWorkspace({ user }: { user: User }) {
         }
         throw new Error(formatApiError(result.detail, response.status))
       }
-      setTask({
+      const newTask: Task = {
         task_id: result.task_id,
         status: 'queued',
         progress: 0,
@@ -298,7 +468,22 @@ function ClipWorkspace({ user }: { user: User }) {
         video_url: null,
         titre: null,
         explication: null,
-      })
+        source: sourceType === 'youtube' ? 'YouTube' : (videoFile?.name || 'Vidéo importée'),
+        duration_seconds: Number(duration),
+        resolution: Number(resolution),
+        aspect_ratio: aspectRatio,
+        subtitles,
+        subtitle_color: subtitleColor,
+        subtitle_size: subtitleSize,
+        subtitle_position: subtitlePosition,
+        credit_cost: tokenCost,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      setTask(newTask)
+      void saveShortToFirestore(user.uid, newTask)
+      setShowHistory(false)
+
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'La création de la tâche a échoué.')
     } finally {
@@ -321,6 +506,41 @@ function ClipWorkspace({ user }: { user: User }) {
   const working = task?.status === 'queued' || task?.status === 'processing'
   const tokenCost = Math.ceil(Number(duration) / 30) + (resolution === '1080' ? 1 : 0)
   const hasEnoughCredits = credits !== null && credits.remaining >= tokenCost
+
+  async function openHistory() {
+    setShowHistory(true)
+    setHistoryError('')
+    try {
+      const backendEntries = await fetchHistory(user)
+      if (backendEntries?.length) {
+        void syncExistingEntriesToFirestore(user.uid, backendEntries)
+      }
+    } catch {
+      // Non bloquant si Firestore a déjà les données
+    }
+  }
+
+  async function handleDeleteHistoryItem(event: React.MouseEvent, taskId: string) {
+    event.stopPropagation()
+    if (!window.confirm('Voulez-vous supprimer ce Short de votre historique ?')) {
+      return
+    }
+    setHistory((prev) => prev.filter((item) => item.task_id !== taskId))
+    if (task?.task_id === taskId) {
+      setTask(null)
+    }
+    try {
+      await deleteShortFromFirestore(user.uid, taskId)
+    } catch (err) {
+      console.warn('Erreur suppression Firestore :', err)
+    }
+    try {
+      await authenticatedFetch(user, `/api/history/${taskId}`, { method: 'DELETE' })
+    } catch (err) {
+      console.warn('Erreur suppression backend :', err)
+    }
+  }
+
 
   async function logout() {
     setLoggingOut(true)
@@ -373,20 +593,20 @@ function ClipWorkspace({ user }: { user: User }) {
             )}
           </div>
 
-          <details className="creation-settings">
-            <summary>
-              <span>Options</span>
+          <section className="creation-settings" aria-label="Options de création">
+            <div className="settings-heading">
+              <span>Format du Short</span>
               <span className="settings-summary">
-                {duration} s · {aspectRatio} · {resolution}p · {tokenCost} jeton{tokenCost > 1 ? 's' : ''}
+                {duration} s · {resolution}p · {tokenCost} jeton{tokenCost > 1 ? 's' : ''}
               </span>
-            </summary>
-            <div className="settings-grid">
+            </div>
+            <div className="settings-grid primary-settings">
               <label>
                 Durée
                 <select value={duration} onChange={(event) => setDuration(event.target.value)} disabled={Boolean(working) || submitting}>
-                  <option value="30">30 secondes</option>
-                  <option value="45">45 secondes</option>
-                  <option value="55">55 secondes</option>
+                  <option value="30">30 s</option>
+                  <option value="45">45 s</option>
+                  <option value="55">55 s</option>
                 </select>
               </label>
               <label>
@@ -394,14 +614,6 @@ function ClipWorkspace({ user }: { user: User }) {
                 <select value={resolution} onChange={(event) => setResolution(event.target.value)} disabled={Boolean(working) || submitting}>
                   <option value="720">720p</option>
                   <option value="1080">1080p</option>
-                </select>
-              </label>
-              <label>
-                Format
-                <select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)} disabled={Boolean(working) || submitting}>
-                  <option value="9:16">Vertical · 9:16</option>
-                  <option value="1:1">Carré · 1:1</option>
-                  <option value="16:9">Paysage · 16:9</option>
                 </select>
               </label>
               <label className="subtitle-option">
@@ -414,7 +626,45 @@ function ClipWorkspace({ user }: { user: User }) {
                 <span>Sous-titres</span>
               </label>
             </div>
-          </details>
+            <details className="advanced-settings">
+              <summary>Personnaliser le format et les sous-titres</summary>
+              <div className="settings-grid">
+                <label>
+                  Format
+                  <select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)} disabled={Boolean(working) || submitting}>
+                    <option value="9:16">Vertical · 9:16</option>
+                    <option value="1:1">Carré · 1:1</option>
+                    <option value="16:9">Paysage · 16:9</option>
+                  </select>
+                </label>
+                <label>
+                  Couleur
+                  <select value={subtitleColor} onChange={(event) => setSubtitleColor(event.target.value)} disabled={Boolean(working) || submitting || !subtitles}>
+                    <option value="yellow">Jaune</option>
+                    <option value="white">Blanc</option>
+                    <option value="cyan">Cyan</option>
+                    <option value="pink">Rose</option>
+                  </select>
+                </label>
+                <label>
+                  Taille
+                  <select value={subtitleSize} onChange={(event) => setSubtitleSize(event.target.value)} disabled={Boolean(working) || submitting || !subtitles}>
+                    <option value="small">Petite</option>
+                    <option value="medium">Moyenne</option>
+                    <option value="large">Grande</option>
+                  </select>
+                </label>
+                <label>
+                  Position
+                  <select value={subtitlePosition} onChange={(event) => setSubtitlePosition(event.target.value)} disabled={Boolean(working) || submitting || !subtitles}>
+                    <option value="bottom">En bas</option>
+                    <option value="center">Au centre</option>
+                    <option value="top">En haut</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </section>
 
           <form className="source-form" onSubmit={createClip}>
             <div className="source-tabs" role="group" aria-label="Source de la vidéo">
@@ -497,7 +747,70 @@ function ClipWorkspace({ user }: { user: User }) {
         </aside>
 
         <section className="result-card" aria-live="polite">
-          {!task ? (
+          <div className="result-toolbar">
+            <div>
+              <span className="result-eyebrow">VOTRE ESPACE · SYNC FIREBASE</span>
+              <h2>{showHistory ? 'Historique des créations' : 'Aperçu du Short'}</h2>
+            </div>
+            <button
+              className={`history-toggle ${showHistory ? 'active' : ''}`}
+              type="button"
+              onClick={() => void (showHistory ? setShowHistory(false) : openHistory())}
+              aria-pressed={showHistory}
+            >
+              {showHistory ? <Clapperboard size={15} /> : <History size={15} />}
+              {showHistory ? 'Créer un Short' : `Historique${history.length ? ` · ${history.length}` : ''}`}
+            </button>
+          </div>
+          {showHistory ? (
+            <div className="history-panel">
+              {historyLoading ? (
+                <p className="history-message"><LoaderCircle className="spin" size={17} /> Chargement de vos créations…</p>
+              ) : historyError ? (
+                <p className="history-error" role="alert">{historyError}</p>
+              ) : history.length === 0 ? (
+                <div className="history-empty">
+                  <History size={23} />
+                  <p>Vos Shorts créés apparaîtront ici et sont synchronisés en temps réel avec Firebase.</p>
+                </div>
+              ) : (
+                <ul className="history-list">
+                  {history.map((entry) => (
+                    <li className="history-item" key={entry.task_id}>
+                      <button className="history-open" type="button" onClick={() => { setTask(entry); setShowHistory(false) }}>
+                        <span className={`history-status ${entry.status}`}>
+                          {entry.status === 'completed' ? <Check size={13} /> : entry.status === 'processing' || entry.status === 'queued' ? <LoaderCircle size={13} /> : '!'}
+                        </span>
+                        <span className="history-item-main">
+                          <strong>{entry.titre || entry.source}</strong>
+                          <span>{entry.source} · {entry.duration_seconds}s · {entry.resolution}p · {entry.credit_cost} jeton{entry.credit_cost === 1 ? '' : 's'}</span>
+                        </span>
+                        <span className={`history-status-label ${entry.status}`}>
+                          {entry.status === 'completed' ? 'Terminé' : entry.status === 'failed' ? 'Échec' : entry.status === 'queued' ? 'En attente' : 'En cours'}
+                        </span>
+                        <time dateTime={entry.created_at}>{new Date(entry.created_at).toLocaleDateString('fr-FR')}</time>
+                      </button>
+                      {entry.status === 'completed' && entry.video_url && (
+                        <a className="history-download" href={entry.video_url} download={`clipflow-${entry.task_id}.mp4`} aria-label="Télécharger ce Short" title="Télécharger le Short">
+                          <Download size={15} />
+                        </a>
+                      )}
+                      <button
+                        className="history-delete"
+                        type="button"
+                        onClick={(event) => void handleDeleteHistoryItem(event, entry.task_id)}
+                        aria-label="Supprimer de l’historique"
+                        title="Supprimer de l’historique"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+          ) : !task ? (
             <div className="empty-result">
               <span className="empty-result-icon"><Clapperboard size={26} /></span>
               <h2>Votre résultat apparaîtra ici</h2>
@@ -538,8 +851,9 @@ function ClipWorkspace({ user }: { user: User }) {
 export default function App() {
   const path = window.location.pathname
   const authMode = path === '/register' ? 'register' : path === '/login' ? 'login' : null
+  const isPublicHome = path === '/'
   const [user, setUser] = useState<User | null>(null)
-  const [checkingSession, setCheckingSession] = useState(authMode === null)
+  const [checkingSession, setCheckingSession] = useState(authMode === null && !isPublicHome)
   const [sessionError, setSessionError] = useState('')
 
   useEffect(() => {
@@ -550,7 +864,7 @@ export default function App() {
         (currentUser) => {
           setUser(currentUser)
           setCheckingSession(false)
-          if (!currentUser) window.location.replace('/login')
+          if (!currentUser && !isPublicHome) window.location.replace('/login')
         },
         (error) => {
           setSessionError(error.message || 'Impossible de vérifier votre session Firebase.')
@@ -561,16 +875,16 @@ export default function App() {
       setSessionError(error instanceof Error ? error.message : firebaseConfigMessage)
       setCheckingSession(false)
     }
-  }, [authMode])
+  }, [authMode, isPublicHome])
 
   if (authMode) return <AuthPage mode={authMode} />
   if (checkingSession) {
     return <SessionScreen loading message="Un instant, nous vérifions votre connexion Firebase." />
   }
-  if (sessionError) {
+  if (sessionError && !isPublicHome) {
     return <SessionScreen loading={false} message={sessionError} />
   }
-  if (!user) return null
+  if (!user) return isPublicHome ? <HomePage /> : null
   if (path === '/subscribe') return <SubscriptionPage user={user} />
   return <ClipWorkspace user={user} />
 }

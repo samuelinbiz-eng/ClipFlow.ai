@@ -28,8 +28,13 @@ from backend.services.credits import (
     InsufficientCreditsError,
     activate_subscription,
     credit_balance,
+    delete_task_history,
+    get_task_history,
+    list_task_history,
+    record_task,
     reserve_credits,
     settle_credits,
+    update_task_history,
 )
 from backend.services.downloader import download_video
 from backend.services.paypal import get_subscription_config
@@ -71,6 +76,9 @@ class ClipRequest(BaseModel):
     aspect_ratio: Literal["9:16", "1:1", "16:9"] = "9:16"
     resolution: Literal[720, 1080] = 1080
     subtitles: bool = True
+    subtitle_color: Literal["white", "yellow", "cyan", "pink"] = "yellow"
+    subtitle_size: Literal["small", "medium", "large"] = "medium"
+    subtitle_position: Literal["bottom", "center", "top"] = "bottom"
 
 
 class PayPalSubscriptionRequest(BaseModel):
@@ -119,10 +127,22 @@ def create_clip(
     _user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, str]:
     task_id = str(uuid.uuid4())
-    _reserve_task_credits(
+    reservation = _reserve_task_credits(
         _user["uid"], task_id, request.duration_seconds, request.resolution
     )
-    _create_task(_user["uid"], task_id)
+    _create_task(
+        _user["uid"],
+        task_id,
+        source="YouTube",
+        duration_seconds=request.duration_seconds,
+        resolution=request.resolution,
+        aspect_ratio=request.aspect_ratio,
+        subtitles=request.subtitles,
+        subtitle_color=request.subtitle_color,
+        subtitle_size=request.subtitle_size,
+        subtitle_position=request.subtitle_position,
+        credit_cost=reservation["cost"],
+    )
     background_tasks.add_task(
         _run_pipeline,
         task_id,
@@ -132,6 +152,9 @@ def create_clip(
         request.aspect_ratio,
         request.resolution,
         request.subtitles,
+        request.subtitle_color,
+        request.subtitle_size,
+        request.subtitle_position,
     )
     return {"task_id": task_id}
 
@@ -145,6 +168,9 @@ async def upload_clip(
     aspect_ratio: Literal["9:16", "1:1", "16:9"] = Form("9:16"),
     resolution: int = Form(1080),
     subtitles: bool = Form(True),
+    subtitle_color: Literal["white", "yellow", "cyan", "pink"] = Form("yellow"),
+    subtitle_size: Literal["small", "medium", "large"] = Form("medium"),
+    subtitle_position: Literal["bottom", "center", "top"] = Form("bottom"),
 ) -> dict[str, str]:
     if duration_seconds not in {30, 45, 55}:
         raise HTTPException(
@@ -164,7 +190,7 @@ async def upload_clip(
             detail="Format vidéo non pris en charge. Utilisez MP4, MOV, MKV, WEBM, AVI ou MPEG.",
         )
 
-    task_id = _create_task(_user["uid"])
+    task_id = str(uuid.uuid4())
     work_dir = TEMP_DIR / task_id
     work_dir.mkdir(parents=True, exist_ok=True)
     source = work_dir / f"source{suffix}"
@@ -189,18 +215,33 @@ async def upload_clip(
 
     if total_size == 0:
         shutil.rmtree(work_dir, ignore_errors=True)
-        with _tasks_lock:
-            _tasks.pop(task_id, None)
         raise HTTPException(status_code=400, detail="Le fichier vidéo est vide.")
 
     try:
-        _reserve_task_credits(_user["uid"], task_id, duration_seconds, resolution)
+        reservation = _reserve_task_credits(
+            _user["uid"], task_id, duration_seconds, resolution
+        )
     except Exception:
         shutil.rmtree(work_dir, ignore_errors=True)
-        with _tasks_lock:
-            _tasks.pop(task_id, None)
         raise
 
+    try:
+        _create_task(
+            _user["uid"],
+            task_id,
+            source=Path(video.filename or "Vidéo importée").name,
+            duration_seconds=duration_seconds,
+            resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            subtitles=subtitles,
+            subtitle_color=subtitle_color,
+            subtitle_size=subtitle_size,
+            subtitle_position=subtitle_position,
+            credit_cost=reservation["cost"],
+        )
+    except Exception:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise
     background_tasks.add_task(
         _run_pipeline,
         task_id,
@@ -210,6 +251,9 @@ async def upload_clip(
         aspect_ratio,
         resolution,
         subtitles,
+        subtitle_color,
+        subtitle_size,
+        subtitle_position,
     )
     return {"task_id": task_id}
 
@@ -219,31 +263,98 @@ def _reserve_task_credits(
     task_id: str,
     duration_seconds: int,
     resolution: int,
-) -> None:
+) -> dict[str, Any]:
     try:
-        reserve_credits(user_id, task_id, duration_seconds, resolution)
+        return reserve_credits(user_id, task_id, duration_seconds, resolution)
     except InsufficientCreditsError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-def _create_task(owner_uid: str, task_id: str | None = None) -> str:
+def _create_task(
+    owner_uid: str,
+    task_id: str | None = None,
+    *,
+    source: str = "Vidéo",
+    duration_seconds: int = 45,
+    resolution: int = 1080,
+    aspect_ratio: str = "9:16",
+    subtitles: bool = True,
+    subtitle_color: str = "yellow",
+    subtitle_size: str = "medium",
+    subtitle_position: str = "bottom",
+    credit_cost: int = 0,
+) -> str:
     task_id = task_id or str(uuid.uuid4())
+    task = {
+        "task_id": task_id,
+        "owner_uid": owner_uid,
+        "status": "queued",
+        "progress": 0,
+        "stage": "En attente",
+        "message": None,
+        "error": None,
+        "video_url": None,
+        "titre": None,
+        "explication": None,
+        "source": source,
+        "duration_seconds": duration_seconds,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
+        "subtitles": subtitles,
+        "subtitle_color": subtitle_color,
+        "subtitle_size": subtitle_size,
+        "subtitle_position": subtitle_position,
+        "credit_cost": credit_cost,
+    }
+    try:
+        record_task(
+            task_id=task_id,
+            user_id=owner_uid,
+            source=source,
+            duration_seconds=duration_seconds,
+            resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            subtitles=subtitles,
+            subtitle_color=subtitle_color,
+            subtitle_size=subtitle_size,
+            subtitle_position=subtitle_position,
+            credit_cost=credit_cost,
+        )
+    except Exception as exc:
+        logger.exception("Impossible d’enregistrer la tâche Short %s dans l’historique.", task_id)
+        try:
+            settle_credits(task_id, succeeded=False)
+        except Exception:
+            logger.exception("Impossible de rembourser les jetons de la tâche %s.", task_id)
+        raise HTTPException(
+            status_code=503,
+            detail="Impossible d’enregistrer cette création. Les jetons seront remboursés.",
+        ) from exc
     with _tasks_lock:
-        _tasks[task_id] = {
-            "task_id": task_id,
-            "owner_uid": owner_uid,
-            "status": "queued",
-            "progress": 0,
-            "stage": "En attente",
-            "message": None,
-            "error": None,
-            "video_url": None,
-            "titre": None,
-            "explication": None,
-        }
+        _tasks[task_id] = task
     return task_id
+
+
+@app.get("/api/history")
+def get_history(
+    _user: dict[str, Any] = Depends(current_user),
+) -> list[dict[str, Any]]:
+    return list_task_history(_user["uid"])
+
+
+@app.delete("/api/history/{task_id}")
+def delete_history(
+    task_id: str,
+    _user: dict[str, Any] = Depends(current_user),
+) -> dict[str, bool]:
+    deleted = delete_task_history(task_id, _user["uid"])
+    with _tasks_lock:
+        if task_id in _tasks and _tasks[task_id].get("owner_uid") == _user["uid"]:
+            _tasks.pop(task_id, None)
+    return {"deleted": deleted}
+
 
 
 @app.get("/api/status/{task_id}")
@@ -253,14 +364,18 @@ def get_status(
 ) -> dict[str, Any]:
     with _tasks_lock:
         task = _tasks.get(task_id)
-        if task is None or task["owner_uid"] != _user["uid"]:
-            raise HTTPException(status_code=404, detail="Tâche inconnue.")
-        return {key: value for key, value in task.items() if key != "owner_uid"}
+        if task is not None and task["owner_uid"] == _user["uid"]:
+            return {key: value for key, value in task.items() if key != "owner_uid"}
+    history_entry = get_task_history(task_id, _user["uid"])
+    if history_entry is None:
+        raise HTTPException(status_code=404, detail="Tâche inconnue.")
+    return history_entry
 
 
 def _update(task_id: str, **values: Any) -> None:
     with _tasks_lock:
         _tasks[task_id].update(values)
+    update_task_history(task_id, values)
 
 
 def _run_pipeline(
@@ -271,6 +386,9 @@ def _run_pipeline(
     aspect_ratio: str,
     resolution: int,
     include_subtitles: bool,
+    subtitle_color: str,
+    subtitle_size: str,
+    subtitle_position: str,
 ) -> None:
     work_dir = TEMP_DIR / task_id
     stage = "Préparation vidéo"
@@ -317,7 +435,14 @@ def _run_pipeline(
         task_output.mkdir(parents=True, exist_ok=True)
         stage = "Génération des sous-titres"
         subtitles = (
-            generate_ass(transcript, selection, task_output / "subtitles.ass")
+            generate_ass(
+                transcript,
+                selection,
+                task_output / "subtitles.ass",
+                color=subtitle_color,
+                size=subtitle_size,
+                position=subtitle_position,
+            )
             if include_subtitles
             else None
         )

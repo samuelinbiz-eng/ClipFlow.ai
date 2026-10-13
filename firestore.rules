@@ -1,0 +1,276 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model & Security Architecture - ClipFlow AI
+// ===============================================================
+//
+// Root Database: Cloud Firestore
+// Default Policy: Deny all reads and writes
+//
+// Collection: /users/{userId}
+// Document ID: userId (matches Firebase Auth UID)
+// Description: User profile document with private user data.
+// Fields:
+//   - uid: string (optional, if provided must match userId, 1-128 chars)
+//   - email: string | null (optional, valid email format, <= 254 chars)
+//   - displayName: string | null (optional, 1-120 chars)
+//   - photoURL: string | null (optional, valid http/https URL, <= 2048 chars)
+//   - lastLoginAt: string | timestamp (optional, <= 50 chars if string)
+//   - createdAt: string | timestamp (optional, immutable once set)
+//   - created_at: string | timestamp (optional, immutable once set)
+//   - updatedAt: string | timestamp (optional, <= 50 chars if string)
+//   - updated_at: string | timestamp (optional, <= 50 chars if string)
+//   - plan: string (optional, 'free' | 'plus', immutable on update by user)
+//
+// Subcollection: /users/{userId}/shorts/{shortId}
+// Document ID: shortId (unique task ID / UUID)
+// Description: Short generation history and status records for ClipFlow AI.
+// Fields:
+//   - task_id: string (required on create, matches shortId, 1-128 chars, immutable)
+//   - status: string (required, 'queued' | 'processing' | 'completed' | 'failed')
+//   - progress: number (optional, 0-100)
+//   - stage: string | null (optional, <= 100 chars)
+//   - error: string | null (optional, <= 2000 chars)
+//   - video_url: string | null (optional, <= 2048 chars)
+//   - titre: string | null (optional, French title alias, <= 300 chars)
+//   - title: string | null (optional, English title alias, <= 300 chars)
+//   - explication: string | null (optional, French explanation alias, <= 2000 chars)
+//   - explanation: string | null (optional, English explanation alias, <= 2000 chars)
+//   - source: string (optional, YouTube URL or filename, <= 1000 chars)
+//   - duration_seconds: number (optional, 1-3600 seconds)
+//   - resolution: number (optional, 144-4320 pixels)
+//   - aspect_ratio: string (optional, e.g. '9:16', <= 20 chars)
+//   - subtitles: bool (optional)
+//   - subtitle_color: string (optional, e.g. 'yellow', <= 50 chars)
+//   - subtitle_size: string (optional, e.g. 'medium', <= 50 chars)
+//   - subtitle_position: string (optional, e.g. 'bottom', <= 50 chars)
+//   - credit_cost: number (optional, 0-1000 credits)
+//   - created_at: string | timestamp (optional, immutable on update)
+//   - updated_at: string | timestamp (optional, <= 50 chars if string)
+//   - message: string | null (optional, status detail message, <= 500 chars)
+//   - owner_uid: string | null (optional, if provided must match userId)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------
+    // Helper Functions
+    // ---------------------------------------------------------------
+
+    // Check if the request is from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Check if the caller is the owner of the document path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Validate URL format (http:// or https://)
+    function isValidUrl(url) {
+      return url is string &&
+        url.size() <= 2048 &&
+        (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // Validate string or null with bounded length
+    function isNullOrString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string &&
+         data[field].size() >= minLen &&
+         data[field].size() <= maxLen);
+    }
+
+    // Validate timestamp or ISO-8601 string representation
+    function isValidTimestampField(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is timestamp ||
+        (data[field] is string &&
+         data[field].size() >= 10 &&
+         data[field].size() <= 50);
+    }
+
+    // ---------------------------------------------------------------
+    // Domain Validators: Users Collection
+    // ---------------------------------------------------------------
+
+    function allowedUserFields() {
+      return [
+        'uid', 'email', 'displayName', 'photoURL',
+        'lastLoginAt', 'createdAt', 'created_at',
+        'updatedAt', 'updated_at', 'plan'
+      ];
+    }
+
+    function isValidUser(data, userId) {
+      return data.keys().hasOnly(allowedUserFields()) &&
+        // uid field, if present, must match the document path userId and auth UID
+        (!( 'uid' in data ) || (data.uid is string && data.uid == userId && data.uid == request.auth.uid)) &&
+        // email validation
+        (!( 'email' in data ) || data.email == null || isValidEmail(data.email)) &&
+        // displayName validation
+        isNullOrString(data, 'displayName', 1, 120) &&
+        // photoURL validation
+        (!( 'photoURL' in data ) || data.photoURL == null || isValidUrl(data.photoURL)) &&
+        // timestamps
+        isValidTimestampField(data, 'lastLoginAt') &&
+        isValidTimestampField(data, 'createdAt') &&
+        isValidTimestampField(data, 'created_at') &&
+        isValidTimestampField(data, 'updatedAt') &&
+        isValidTimestampField(data, 'updated_at') &&
+        // plan restriction
+        (!( 'plan' in data ) || (data.plan is string && data.plan in ['free', 'plus']));
+    }
+
+    function isUserUpdateAllowed() {
+      return (
+        // uid cannot be changed on update
+        (!('uid' in resource.data) || !('uid' in request.resource.data) ||
+         request.resource.data.uid == resource.data.uid) &&
+        // User cannot self-escalate plan on update
+        (!('plan' in resource.data) || !('plan' in request.resource.data) ||
+         request.resource.data.plan == resource.data.plan) &&
+        // Creation timestamps cannot be mutated
+        (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) ||
+         request.resource.data.createdAt == resource.data.createdAt) &&
+        (!('created_at' in resource.data) || !('created_at' in request.resource.data) ||
+         request.resource.data.created_at == resource.data.created_at)
+      );
+    }
+
+    // ---------------------------------------------------------------
+    // Domain Validators: Shorts Subcollection
+    // ---------------------------------------------------------------
+
+    function allowedShortFields() {
+      return [
+        'task_id', 'status', 'progress', 'stage', 'error', 'video_url',
+        'titre', 'title', 'explication', 'explanation', 'source',
+        'duration_seconds', 'resolution', 'aspect_ratio', 'subtitles',
+        'subtitle_color', 'subtitle_size', 'subtitle_position',
+        'credit_cost', 'created_at', 'updated_at', 'message', 'owner_uid'
+      ];
+    }
+
+    function isValidShort(data, shortId, userId) {
+      return data.keys().hasOnly(allowedShortFields()) &&
+        // task_id must be a string and correspond to document ID shortId
+        (!( 'task_id' in data ) || (data.task_id is string && data.task_id.size() >= 1 && data.task_id.size() <= 128 && data.task_id == shortId)) &&
+        // status enum check
+        (!( 'status' in data ) || (data.status is string && data.status in ['queued', 'processing', 'completed', 'failed'])) &&
+        // progress: percentage integer/number 0..100
+        (!( 'progress' in data ) || (data.progress is number && data.progress >= 0 && data.progress <= 100)) &&
+        // stage: string length bound
+        isNullOrString(data, 'stage', 0, 100) &&
+        // error: string length bound
+        isNullOrString(data, 'error', 0, 2000) &&
+        // message: string length bound
+        isNullOrString(data, 'message', 0, 500) &&
+        // video_url: bounded string
+        isNullOrString(data, 'video_url', 0, 2048) &&
+        // titre / title: French and English aliases
+        isNullOrString(data, 'titre', 0, 300) &&
+        isNullOrString(data, 'title', 0, 300) &&
+        // explication / explanation: French and English aliases
+        isNullOrString(data, 'explication', 0, 2000) &&
+        isNullOrString(data, 'explanation', 0, 2000) &&
+        // source: origin URL or label
+        isNullOrString(data, 'source', 1, 1000) &&
+        // duration_seconds: bounded positive number
+        (!( 'duration_seconds' in data ) || (data.duration_seconds is number && data.duration_seconds >= 1 && data.duration_seconds <= 3600)) &&
+        // resolution: standard video height
+        (!( 'resolution' in data ) || (data.resolution is number && data.resolution >= 144 && data.resolution <= 4320)) &&
+        // aspect_ratio: string bound
+        isNullOrString(data, 'aspect_ratio', 1, 20) &&
+        // subtitles: boolean flag
+        (!( 'subtitles' in data ) || data.subtitles is bool) &&
+        // subtitle appearance settings
+        isNullOrString(data, 'subtitle_color', 1, 50) &&
+        isNullOrString(data, 'subtitle_size', 1, 50) &&
+        isNullOrString(data, 'subtitle_position', 1, 50) &&
+        // credit_cost: non-negative integer/number
+        (!( 'credit_cost' in data ) || (data.credit_cost is number && data.credit_cost >= 0 && data.credit_cost <= 1000)) &&
+        // timestamps
+        isValidTimestampField(data, 'created_at') &&
+        isValidTimestampField(data, 'updated_at') &&
+        // owner_uid: if present must match document parent userId
+        (!( 'owner_uid' in data ) || data.owner_uid == null || (data.owner_uid is string && data.owner_uid == userId));
+    }
+
+    function isShortUpdateAllowed() {
+      return (
+        // task_id is immutable
+        (!('task_id' in resource.data) || !('task_id' in request.resource.data) ||
+         request.resource.data.task_id == resource.data.task_id) &&
+        // created_at is immutable once recorded
+        (!('created_at' in resource.data) || !('created_at' in request.resource.data) ||
+         request.resource.data.created_at == resource.data.created_at) &&
+        // owner_uid cannot be changed
+        (!('owner_uid' in resource.data) || !('owner_uid' in request.resource.data) ||
+         request.resource.data.owner_uid == resource.data.owner_uid)
+      );
+    }
+
+    // ---------------------------------------------------------------
+    // Collection Rules: Users
+    // ---------------------------------------------------------------
+
+    match /users/{userId} {
+      // Only the authenticated owner can access their profile document
+      allow read: if isOwner(userId);
+
+      // Only the authenticated owner can create their profile document
+      allow create: if isOwner(userId) &&
+                       isValidUser(request.resource.data, userId);
+
+      // Updates must satisfy ownership, domain validation, and immutability guards
+      allow update: if isOwner(userId) &&
+                       isValidUser(request.resource.data, userId) &&
+                       isUserUpdateAllowed();
+
+      // Owners can delete their profile document
+      allow delete: if isOwner(userId);
+
+      // ---------------------------------------------------------------
+      // Subcollection Rules: Shorts
+      // ---------------------------------------------------------------
+
+      match /shorts/{shortId} {
+        // Only the owner can view or query their shorts history
+        allow read: if isOwner(userId);
+
+        // Required on create: task_id and status to prevent empty/corrupt documents
+        allow create: if isOwner(userId) &&
+                         request.resource.data.keys().hasAll(['task_id', 'status']) &&
+                         isValidShort(request.resource.data, shortId, userId);
+
+        // Updates must re-verify all domain constraints and protect immutable fields
+        allow update: if isOwner(userId) &&
+                         isValidShort(request.resource.data, shortId, userId) &&
+                         isShortUpdateAllowed();
+
+        // Only the owner can delete their short documents
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Default Deny Fallback
+    // ---------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
