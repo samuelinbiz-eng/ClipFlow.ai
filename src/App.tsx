@@ -81,6 +81,7 @@ const subtitlePreviewSizes: Record<string, number> = {
   large: 19,
   xlarge: 22,
 }
+const maxUploadBytes = 250 * 1024 * 1024
 
 function formatTime(seconds: number): string {
   const safeSeconds = Math.max(0, Math.floor(seconds))
@@ -309,6 +310,7 @@ function ClipWorkspace({ user }: { user: User }) {
   const [historyError, setHistoryError] = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [formError, setFormError] = useState('')
   const [loggingOut, setLoggingOut] = useState(false)
   const [credits, setCredits] = useState<CreditBalance | null>(null)
@@ -544,12 +546,13 @@ function ClipWorkspace({ user }: { user: User }) {
     } else if (!videoFile) {
       setFormError('Sélectionnez un fichier vidéo.')
       return
-    } else if (videoFile.size > 2 * 1024 * 1024 * 1024) {
-      setFormError('La vidéo ne doit pas dépasser 2 Go.')
+    } else if (videoFile.size > maxUploadBytes) {
+      setFormError('La vidéo ne doit pas dépasser 250 Mo.')
       return
     }
 
     setSubmitting(true)
+    setUploadProgress(null)
     try {
       const options = {
         duration_seconds: Number(duration),
@@ -570,10 +573,47 @@ function ClipWorkspace({ user }: { user: User }) {
           })
       } else {
         if (!videoFile) throw new Error('Sélectionnez un fichier vidéo.')
-        const body = new FormData()
-        body.append('video', videoFile)
-        Object.entries(options).forEach(([key, value]) => body.append(key, String(value)))
-        response = await authenticatedFetch(user, '/api/clip/upload', { method: 'POST', body })
+        if (import.meta.env.DEV) {
+          const body = new FormData()
+          body.append('video', videoFile)
+          Object.entries(options).forEach(([key, value]) => body.append(key, String(value)))
+          response = await authenticatedFetch(user, '/api/clip/upload', { method: 'POST', body })
+        } else {
+          const { upload: uploadBlob } = await import('@vercel/blob/client')
+          const uploadId = crypto.randomUUID()
+          const suffix = videoFile.name.slice(videoFile.name.lastIndexOf('.')).toLowerCase()
+          const pathname = `uploads/${user.uid}/${uploadId}${suffix}`
+          const token = await user.getIdToken()
+          const blob = await uploadBlob(pathname, videoFile, {
+            access: 'private',
+            handleUploadUrl: apiUrl('/api/blob-upload'),
+            headers: { Authorization: `Bearer ${token}` },
+            clientPayload: JSON.stringify({ uploadId, pathname }),
+            contentType: videoFile.type || undefined,
+            multipart: true,
+            onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
+          })
+          const finalized = await authenticatedFetch(user, '/api/blob-upload/finalize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ upload_id: uploadId, pathname, blob_url: blob.url }),
+          })
+          if (finalized.status === 401) {
+            await signOut(getFirebaseAuth())
+            window.location.assign('/login')
+            return
+          }
+          const finalizedResult = await finalized.json()
+          if (!finalized.ok) {
+            throw new Error(formatApiError(finalizedResult.detail, finalized.status))
+          }
+          setUploadProgress(100)
+          response = await authenticatedFetch(user, '/api/clip/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ upload_id: uploadId, ...options }),
+          })
+        }
       }
       const result = await response.json()
       if (response.status === 401) {
@@ -622,6 +662,7 @@ function ClipWorkspace({ user }: { user: User }) {
       setFormError(error instanceof Error ? error.message : 'La création de la tâche a échoué.')
     } finally {
       setSubmitting(false)
+      setUploadProgress(null)
     }
   }
 
@@ -953,7 +994,13 @@ function ClipWorkspace({ user }: { user: User }) {
               </button>
             )}
             <p className="upload-note">
-              {sourceType === 'youtube' ? 'Lien public ou accessible avec vos cookies.' : 'MP4, MOV, MKV, WEBM, AVI · 2 Go max.'}
+              {sourceType === 'youtube'
+                ? import.meta.env.DEV
+                  ? 'Lien public ou accessible avec vos cookies locaux.'
+                  : 'Lien YouTube public.'
+                : submitting && uploadProgress !== null
+                  ? `Téléversement privé sécurisé · ${uploadProgress} %`
+                  : 'MP4, MOV, MKV, WEBM, AVI · 250 Mo max.'}
             </p>
             <button
               className="create-button"

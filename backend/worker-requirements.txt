@@ -1,0 +1,5 @@
+-r requirements.txt
+yt-dlp
+faster-whisper
+av>=11,<19
+opencv-python-headless>=4.8,<5

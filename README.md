@@ -17,7 +17,7 @@ GemClip sélectionne un extrait YouTube ou importé, le recadre en Short vertica
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 py -m pip install --upgrade pip setuptools wheel Cython
-py -m pip install -r backend\requirements.txt
+py -m pip install -r backend\worker-requirements.txt
 npm install
 Copy-Item .env.example .env
 ```
@@ -36,11 +36,11 @@ La page `/subscribe` utilise le bouton PayPal fourni et le plan `P-5DV679072B532
 
 ### Jetons de création
 
-Chaque compte reçoit 10 jetons par jour ; un abonnement Plus PayPal actif en donne 100. Une création coûte `plafond(durée en secondes / 30)` jetons, plus 1 jeton en 1080p (720p n'a pas de supplément). Les jetons se réinitialisent à minuit UTC. Ils sont réservés au lancement du traitement, consommés si la création réussit et remboursés automatiquement si elle échoue. Les soldes, abonnements et réservations sont conservés dans `backend/data/credits.sqlite3` (ignoré par Git) ; `CREDITS_DATABASE_PATH` peut remplacer cet emplacement.
+Chaque compte reçoit 10 jetons par jour ; un abonnement Plus PayPal actif en donne 100. Une création coûte `plafond(durée en secondes / 30)` jetons, plus 1 jeton en 1080p (720p n'a pas de supplément). Les jetons se réinitialisent à minuit UTC. Ils sont réservés au lancement du traitement, consommés si la création réussit et remboursés automatiquement si elle échoue. En local, les données sont dans `backend/data/credits.sqlite3`; en ligne, elles sont conservées dans Neon PostgreSQL via `DATABASE_URL`.
 
 ### Historique et sous-titres
 
-L'éditeur conserve les 50 dernières créations du compte connecté dans le même stockage SQLite : source, statut, durée, résolution, jetons dépensés et lien de téléchargement pour les vidéos terminées. L'historique reste disponible après rechargement ou redémarrage du backend.
+L'éditeur conserve les 50 dernières créations du compte connecté dans l'historique backend : source, statut, durée, résolution, jetons dépensés et lien de téléchargement pour les vidéos terminées. En ligne, cet historique est stocké dans Neon PostgreSQL.
 
 Dans **Options > Personnaliser le format et les sous-titres**, choisissez la taille (très petite à très grande), une police (Arial, DejaVu Sans, Liberation Sans ou Noto Sans), une couleur personnalisée et la position (haut, centre ou bas). L'aperçu reflète les choix de police, de taille et de couleur ; ces réglages sont appliqués au rendu ASS/FFmpeg et mémorisés avec chaque création.
 
@@ -60,22 +60,38 @@ npm run dev
 
 Ouvrez l'adresse Vite affichée dans le terminal. La page publique `/` présente GemClip ; connectez-vous ou inscrivez-vous pour accéder à l'éditeur. En local, le proxy Vite transmet `/api` et `/output` à FastAPI. Le premier lancement de Whisper télécharge le modèle choisi ; il peut donc prendre plus de temps.
 
-Vous pouvez coller un lien YouTube ou importer une vidéo locale (MP4, MOV, MKV, WEBM, AVI ou MPEG, jusqu'à 2 Go). Whisper lit directement la piste audio de la vidéo, évitant un téléchargement audio ou une conversion MP3 intermédiaire. Au montage, OpenCV suit le visage échantillonné dans l'extrait pour le recadrage vertical; si aucun visage n'est détecté, le cadrage reste centré. FFmpeg conserve et synchronise la piste audio originale dans le Short.
+Vous pouvez coller un lien YouTube ou importer une vidéo (MP4, MOV, MKV, WEBM, AVI ou MPEG, jusqu'à 250 Mo). En production, le navigateur envoie directement les imports au Blob privé Vercel ; en local, l'API reçoit le fichier. Whisper lit directement la piste audio, évitant une conversion MP3 intermédiaire. Au montage, OpenCV suit le visage échantillonné dans l'extrait pour le recadrage vertical ; si aucun visage n'est détecté, le cadrage reste centré. FFmpeg conserve et synchronise la piste audio originale dans le Short.
 
 En local, les médias temporaires sont stockés dans `backend/temp/` et les Shorts terminés dans `backend/output/`. `MEDIA_STORAGE_PATH` permet de déplacer ces répertoires sur un disque persistant. Les vidéos sont téléchargées par une route API authentifiée et ne sont pas exposées sous un répertoire statique public.
 
 L'abonnement PayPal est vérifié côté serveur après approbation. Les paiements récurrents, renouvellements et annulations sont gérés dans le compte PayPal de l'abonné.
 
-## Publication
+## Publication avec GitHub et Vercel
 
-Le frontend est conçu pour Vercel et le backend vidéo pour un service Docker Render avec un disque persistant. Le traitement utilise FFmpeg, Whisper, des tâches longues, SQLite et des fichiers locaux ; il ne doit pas être hébergé dans une fonction serverless éphémère.
+Le déploiement utilise deux projets Vercel dans le même dépôt : `gemclip` (racine du dépôt, frontend Vite) et `backend` (répertoire `backend`, API FastAPI et fonction Node pour les jetons d'import Blob). `vercel.json` transmet `/api/*` du frontend à l'URL de production du projet backend. L'API et les médias ne sont pas réunis dans une seule fonction : le traitement vidéo s'exécute sur les runners GitHub Actions.
 
-1. Importez le dépôt GitHub dans Render avec le Blueprint `render.yaml`. Le service nécessite une instance payante et crée un disque persistant de 10 Go ; vérifiez les tarifs Render avant de confirmer. Le Blueprint demandera les valeurs secrètes. Le service doit rester nommé `gemclip-api` pour correspondre à l'adresse configurée dans `vercel.json`.
-2. Dans Render, configurez `GROQ_API_KEY`, `PAYPAL_ENVIRONMENT=live`, le `PAYPAL_CLIENT_ID`, le `PAYPAL_CLIENT_SECRET` et le `PAYPAL_PLAN_ID` provenant de la même application et du même environnement PayPal. Le plan doit correspondre au prix et à la devise annoncés. Ne réutilisez pas les identifiants Sandbox pour les paiements réels.
-3. Vérifiez `https://gemclip-api.onrender.com/api/health`. Dans Vercel, importez le dépôt avec sa racine à la racine du projet, la commande `npm run build` et le répertoire de sortie `dist`. `vercel.json` transmet `/api/*` au service Render, tandis que les autres routes servent le frontend ; laissez donc `VITE_API_BASE_URL` vide dans Vercel. Si Render affiche une URL différente, remplacez la destination Render de la règle `/api/(.*)` dans `vercel.json` par cette origine exacte, puis redéployez. `CORS_ORIGINS` est prérempli pour le domaine Vercel et le développement local ; ajoutez toute origine personnalisée si nécessaire.
-4. Dans Firebase Console, activez les fournisseurs d'authentification voulus, ajoutez les domaines Vercel autorisés et publiez les règles de `firestore.rules`. Gardez les secrets Firebase Admin et PayPal dans les variables du service, jamais dans Vercel ou le dépôt.
-5. Vérifiez `https://<service-render>/api/health`, les parcours inscription/connexion, création et téléchargement d'une vidéo, l'historique après redémarrage, ainsi qu'un paiement PayPal réel avant d'annoncer le service.
+### Variables du backend Vercel
 
-Les créations restent sur le disque Render ; surveillez son espace disponible et mettez en place une politique de conservation/sauvegarde avant d'ouvrir le service à grande échelle. Le disque ne remplace pas un stockage objet ni une sauvegarde.
+Reliez au projet backend le Blob privé Vercel et Neon PostgreSQL, puis configurez :
 
-Avant la publication publique, ajoutez et faites vérifier les pages de confidentialité, conditions d'utilisation, traitement/suppression des vidéos et modalités d'abonnement/résiliation adaptées à votre activité et à votre juridiction. Configurez également un domaine public et vérifiez que le déploiement Vercel est effectivement actif.
+- `DATABASE_URL` : chaîne de connexion Neon.
+- `GROQ_API_KEY` : clé utilisée par l'API pour l'analyse du transcript.
+- `GEMCLIP_WORKER_SECRET` : secret aléatoire long, partagé uniquement avec le secret GitHub homonyme.
+- `BLOB_READ_WRITE_TOKEN` : jeton Blob nécessaire à l'import navigateur et au backend.
+- Les variables Firebase Admin et PayPal utilisées par les parcours existants (`FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_PLAN_ID`, `PAYPAL_ENVIRONMENT`).
+
+N'ajoutez pas ces valeurs dans les fichiers suivis par Git. Laissez `VITE_API_BASE_URL` vide dans le frontend de production : la règle de réécriture du dépôt utilise l'API backend. Vérifiez `https://<domaine-backend>/api/health`.
+
+### Secrets du worker GitHub Actions
+
+Dans les paramètres du dépôt GitHub, ajoutez ces secrets Actions :
+
+- `GEMCLIP_API_URL` : origine HTTPS du backend, sans `/api` à la fin.
+- `GEMCLIP_WORKER_SECRET` : même valeur que dans le backend Vercel.
+- `BLOB_READ_WRITE_TOKEN` : jeton de lecture/écriture du Blob privé relié au backend.
+
+Le workflow `.github/workflows/gemclip-worker.yml` se lance toutes les cinq minutes ou manuellement. Il traite la file persistante Neon avec Whisper, FFmpeg et le SDK Blob ; il ne transmet pas l'audio à Groq. Les vidéos source sont conservées au plus 24 heures et les Shorts terminés 30 jours. Les limites de ce mode d'essai sont 250 Mo par import, 100 Mo par Short et 750 Mo de stockage réservé au total. Le nettoyage est exécuté par le worker.
+
+Les runners GitHub Actions standard sont gratuits pour les dépôts publics. Les limites d'usage de Vercel Hobby et de Blob restent applicables ; surveillez les quotas et ne présentez pas cette configuration de test comme une garantie de disponibilité ou comme une offre commerciale prête à l'échelle.
+
+Avant une publication commerciale, faites vérifier les pages de confidentialité, les conditions d'utilisation, la politique de suppression des vidéos et les modalités d'abonnement/résiliation adaptées à votre activité et à votre juridiction. Après configuration des secrets, vérifiez l'import privé, la création depuis YouTube, le rendu, le téléchargement authentifié, le nettoyage et le déploiement des deux projets.

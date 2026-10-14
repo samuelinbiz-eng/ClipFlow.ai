@@ -10,3 +10,4 @@ cookies*.txt
 backend/temp/
 backend/output/
 backend/data/
+.vercel

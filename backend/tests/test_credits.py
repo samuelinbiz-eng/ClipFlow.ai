@@ -118,6 +118,41 @@ class CreditBalanceTests(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record["subtitle_font"], "Arial")
 
+    def test_upload_completion_is_idempotent_for_the_same_blob(self) -> None:
+        upload_id = "upload-id"
+        pathname = "uploads/user/upload-id.mp4"
+        blob_url = "https://store.private.blob.vercel-storage.com/uploads/user/upload-id.mp4"
+        credits.reserve_upload_storage("user", upload_id, pathname)
+
+        credits.complete_upload_storage(upload_id, pathname, blob_url, 1024)
+        credits.complete_upload_storage(upload_id, pathname, blob_url, 1024)
+
+        record = credits.get_media_upload(upload_id, "user")
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "uploaded")
+        self.assertEqual(record["actual_bytes"], 1024)
+
+    def test_expired_upload_reservations_are_not_released_before_blob_deletion(self) -> None:
+        upload_id = "upload-id"
+        pathname = "uploads/user/upload-id.mp4"
+        credits.reserve_upload_storage("user", upload_id, pathname)
+        with closing(credits._connect()) as connection:
+            connection.execute(
+                "UPDATE media_uploads SET created_at = ? WHERE upload_id = ?",
+                ("2000-01-01T00:00:00+00:00", upload_id),
+            )
+
+        expired = credits.expire_upload_reservations("2020-01-01T00:00:00+00:00")
+        record = credits.get_media_upload(upload_id, "user")
+
+        self.assertEqual([item["upload_id"] for item in expired], [upload_id])
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "reserved")
+        credits.release_task_storage(upload_id)
+        released = credits.get_media_upload(upload_id, "user")
+        self.assertIsNotNone(released)
+        self.assertEqual(released["status"], "deleted")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from backend.services.ai_analyzer import ClipSelection
-from backend.services.transcriber import Transcript
+if TYPE_CHECKING:
+    from backend.services.ai_analyzer import ClipSelection
+    from backend.services.transcriber import Transcript
 
 SUBTITLE_STYLES = {
     "white": "&H00FFFFFF",

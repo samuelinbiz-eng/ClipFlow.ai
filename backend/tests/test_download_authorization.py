@@ -206,9 +206,15 @@ class DownloadAuthorizationTests(unittest.TestCase):
         try:
             with (
                 patch.object(self.main, "_update", side_effect=update_task),
-                patch.object(self.main, "transcribe", return_value=transcript),
+                patch(
+                    "backend.services.transcriber.transcribe",
+                    return_value=transcript,
+                ),
                 patch.object(self.main, "_probe_duration", return_value=100),
-                patch.object(self.main, "analyze_transcript", return_value=selection),
+                patch(
+                    "backend.services.ai_analyzer.analyze_transcript",
+                    return_value=selection,
+                ),
             ):
                 self.main._run_pipeline(task_id, None, source, 45)
 

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-from faster_whisper import WhisperModel
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
 
 
 @dataclass
@@ -30,6 +31,8 @@ def transcribe(
 ) -> Transcript:
     global _model
     if _model is None:
+        from faster_whisper import WhisperModel
+
         _model = WhisperModel(model_name, device="cpu", compute_type="int8")
 
     segments, info = _model.transcribe(

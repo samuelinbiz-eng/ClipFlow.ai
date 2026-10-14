@@ -4,10 +4,12 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from groq import AuthenticationError, Groq
 
-from backend.services.transcriber import Transcript
+if TYPE_CHECKING:
+    from backend.services.transcriber import Transcript
 
 
 @dataclass

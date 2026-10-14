@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +16,54 @@ FREE_DAILY_CREDITS = 10
 PLUS_DAILY_CREDITS = 100
 ALLOWED_DURATIONS = {30, 45, 55}
 ALLOWED_RESOLUTIONS = {720, 1080}
+MAX_UPLOAD_BYTES = 250 * 1024 * 1024
+MAX_OUTPUT_BYTES = 100 * 1024 * 1024
+MAX_STORAGE_BYTES = 750 * 1024 * 1024
 _database_lock = threading.Lock()
-_initialized_database: Path | None = None
+_initialized_database: Path | str | None = None
+
+
+class StorageQuotaError(ValueError):
+    pass
+
+
+class _DatabaseConnection:
+    def __init__(self, connection: Any, *, postgres: bool) -> None:
+        self._connection = connection
+        self.is_postgres = postgres
+
+    def execute(self, statement: str, parameters: tuple[Any, ...] = ()) -> Any:
+        if self.is_postgres:
+            statement = statement.replace("?", "%s")
+        return self._connection.execute(statement, parameters)
+
+    def executescript(self, script: str) -> None:
+        if not self.is_postgres:
+            self._connection.executescript(script)
+            return
+        for statement in script.split(";"):
+            if statement.strip():
+                self.execute(statement)
+
+    @property
+    def in_transaction(self) -> bool:
+        if not self.is_postgres:
+            return self._connection.in_transaction
+        from psycopg.pq import TransactionStatus
+
+        return self._connection.info.transaction_status != TransactionStatus.IDLE
+
+    def begin(self) -> None:
+        self.execute("BEGIN" if self.is_postgres else "BEGIN IMMEDIATE")
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
 
 
 class InsufficientCreditsError(ValueError):
@@ -34,16 +81,45 @@ def _database_path() -> Path:
     ).resolve()
 
 
+def _database_url() -> str:
+    value = os.getenv("DATABASE_URL", "").strip()
+    if value.startswith(("postgres://", "postgresql://")):
+        return value
+    if os.getenv("VERCEL"):
+        raise RuntimeError("DATABASE_URL doit pointer vers la base PostgreSQL Neon.")
+    return ""
+
+
+def _open_connection() -> _DatabaseConnection:
+    database_url = _database_url()
+    if database_url:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return _DatabaseConnection(
+            psycopg.connect(database_url, row_factory=dict_row, autocommit=True),
+            postgres=True,
+        )
+
+    database_path = _database_path()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(database_path, timeout=15, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    return _DatabaseConnection(connection, postgres=False)
+
+
+def _database_key() -> Path | str:
+    return _database_url() or _database_path()
+
+
 def _initialize() -> None:
     global _initialized_database
-    database_path = _database_path()
+    database_key = _database_key()
     with _database_lock:
-        if _initialized_database == database_path:
+        if _initialized_database == database_key:
             return
-        database_path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(
-            sqlite3.connect(database_path, timeout=15, isolation_level=None)
-        ) as connection:
+        connection = _open_connection()
+        try:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS user_subscriptions (
@@ -83,47 +159,98 @@ def _initialize() -> None:
                     subtitle_position TEXT NOT NULL,
                     subtitle_font TEXT NOT NULL DEFAULT 'Arial',
                     credit_cost INTEGER NOT NULL,
+                    output_bytes INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS task_history_user_date_idx
                     ON task_history(user_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS task_payloads (
+                    task_id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    job_status TEXT NOT NULL DEFAULT 'idle',
+                    lease_until TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS task_payloads_queue_idx
+                    ON task_payloads(job_status, created_at);
+                CREATE TABLE IF NOT EXISTS media_uploads (
+                    upload_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    pathname TEXT NOT NULL UNIQUE,
+                    blob_url TEXT,
+                    input_reserved_bytes INTEGER NOT NULL DEFAULT 0,
+                    output_reserved_bytes INTEGER NOT NULL DEFAULT 0,
+                    actual_bytes INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL CHECK (
+                        status IN ('reserved', 'uploaded', 'attached', 'task', 'deleted')
+                    ),
+                    task_id TEXT UNIQUE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS media_uploads_status_idx
+                    ON media_uploads(status, created_at);
                 """
             )
-            task_history_columns = {
-                row[1]
-                for row in connection.execute("PRAGMA table_info(task_history)")
-            }
-            if "subtitle_font" not in task_history_columns:
+            if connection.is_postgres:
                 connection.execute(
-                    "ALTER TABLE task_history ADD COLUMN subtitle_font TEXT NOT NULL DEFAULT 'Arial'"
+                    "ALTER TABLE task_history ADD COLUMN IF NOT EXISTS "
+                    "subtitle_font TEXT NOT NULL DEFAULT 'Arial'"
                 )
-            connection.execute(
-                """
-                UPDATE credit_reservations
-                SET status = 'refunded', updated_at = ?
-                WHERE status = 'reserved'
-                """,
-                (datetime.now(timezone.utc).isoformat(),),
-            )
-            connection.execute(
-                """
-                UPDATE task_history
-                SET status = 'failed', stage = 'Échec · serveur redémarré',
-                    error = 'Le serveur a redémarré pendant le traitement.',
-                    updated_at = ?
-                WHERE status IN ('queued', 'processing')
-                """,
-                (datetime.now(timezone.utc).isoformat(),),
-            )
-        _initialized_database = database_path
+                connection.execute(
+                    "ALTER TABLE task_history ADD COLUMN IF NOT EXISTS "
+                    "output_bytes INTEGER NOT NULL DEFAULT 0"
+                )
+            else:
+                task_history_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(task_history)")
+                }
+                if "subtitle_font" not in task_history_columns:
+                    connection.execute(
+                        "ALTER TABLE task_history ADD COLUMN subtitle_font "
+                        "TEXT NOT NULL DEFAULT 'Arial'"
+                    )
+                if "output_bytes" not in task_history_columns:
+                    connection.execute(
+                        "ALTER TABLE task_history ADD COLUMN output_bytes "
+                        "INTEGER NOT NULL DEFAULT 0"
+                    )
+        finally:
+            connection.close()
+        _initialized_database = database_key
 
 
-def _connect() -> sqlite3.Connection:
+def _connect() -> _DatabaseConnection:
     _initialize()
-    connection = sqlite3.connect(_database_path(), timeout=15, isolation_level=None)
-    connection.row_factory = sqlite3.Row
-    return connection
+    return _open_connection()
+
+
+def _lock_storage_quota(connection: _DatabaseConnection) -> None:
+    if connection.is_postgres:
+        connection.execute("SELECT pg_advisory_xact_lock(278419531)")
+
+
+def _begin(connection: _DatabaseConnection) -> None:
+    connection.begin()
+    _lock_storage_quota(connection)
+
+
+def _storage_in_use(connection: _DatabaseConnection) -> int:
+    reserved = connection.execute(
+        """
+        SELECT COALESCE(SUM(input_reserved_bytes + output_reserved_bytes), 0) AS total
+        FROM media_uploads
+        WHERE status IN ('reserved', 'uploaded', 'attached', 'task')
+        """
+    ).fetchone()["total"]
+    stored = connection.execute(
+        "SELECT COALESCE(SUM(output_bytes), 0) AS total FROM task_history "
+        "WHERE status = 'completed'"
+    ).fetchone()["total"]
+    return int(reserved) + int(stored)
 
 
 def short_cost(duration_seconds: int, resolution: int) -> int:
@@ -199,7 +326,9 @@ def activate_subscription(user_id: str, subscription_id: str) -> dict[str, Any]:
                 """,
                 (user_id, verified["subscription_id"], verified["status"], now),
             )
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:
+        if not _is_integrity_error(exc):
+            raise
         raise ValueError("Cet abonnement PayPal est déjà associé à un autre compte.") from exc
     return verified
 
@@ -256,7 +385,7 @@ def reserve_credits(
     now = datetime.now(timezone.utc).isoformat()
     connection = _connect()
     try:
-        connection.execute("BEGIN IMMEDIATE")
+        connection.begin()
         spent_row = connection.execute(
             """
             SELECT COALESCE(SUM(amount), 0) AS total
@@ -423,4 +552,455 @@ def delete_task_history(task_id: str, user_id: str) -> bool:
             """,
             (task_id, user_id),
         )
+        if cursor.rowcount:
+            connection.execute("DELETE FROM task_payloads WHERE task_id = ?", (task_id,))
+            connection.execute(
+                """
+                UPDATE media_uploads
+                SET status = 'deleted', input_reserved_bytes = 0,
+                    output_reserved_bytes = 0, updated_at = ?
+                WHERE task_id = ? OR upload_id = ?
+                """,
+                (datetime.now(timezone.utc).isoformat(), task_id, task_id),
+            )
         return cursor.rowcount > 0
+
+
+def _is_integrity_error(error: Exception) -> bool:
+    if isinstance(error, sqlite3.IntegrityError):
+        return True
+    try:
+        import psycopg
+    except ImportError:
+        return False
+    return isinstance(error, psycopg.IntegrityError)
+
+
+def save_task_payload(
+    task_id: str,
+    payload: dict[str, Any],
+    *,
+    job_status: str = "queued",
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    serialized = json.dumps(payload, ensure_ascii=False)
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            INSERT INTO task_payloads (task_id, payload, job_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+                payload = excluded.payload,
+                job_status = excluded.job_status,
+                lease_until = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (task_id, serialized, job_status, now, now),
+        )
+
+
+def get_task_payload(task_id: str) -> dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT payload FROM task_payloads WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    value = json.loads(str(row["payload"]))
+    return value if isinstance(value, dict) else None
+
+
+def get_media_upload(upload_id: str, user_id: str) -> dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            """
+            SELECT upload_id, user_id, pathname, blob_url, input_reserved_bytes,
+                   output_reserved_bytes, actual_bytes, status, task_id, created_at
+            FROM media_uploads
+            WHERE upload_id = ? AND user_id = ?
+            """,
+            (upload_id, user_id),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def reserve_upload_storage(user_id: str, upload_id: str, pathname: str) -> None:
+    if not pathname.startswith(f"uploads/{user_id}/") or ".." in pathname.split("/"):
+        raise ValueError("Chemin de téléversement invalide.")
+    now = datetime.now(timezone.utc).isoformat()
+    connection = _connect()
+    try:
+        _begin(connection)
+        if _storage_in_use(connection) + MAX_UPLOAD_BYTES + MAX_OUTPUT_BYTES > MAX_STORAGE_BYTES:
+            connection.rollback()
+            raise StorageQuotaError(
+                "Le stockage gratuit est presque plein. Supprimez des Shorts ou réessayez plus tard."
+            )
+        connection.execute(
+            """
+            INSERT INTO media_uploads (
+                upload_id, user_id, pathname, input_reserved_bytes,
+                output_reserved_bytes, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'reserved', ?, ?)
+            """,
+            (upload_id, user_id, pathname, MAX_UPLOAD_BYTES, MAX_OUTPUT_BYTES, now, now),
+        )
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def complete_upload_storage(
+    upload_id: str,
+    pathname: str,
+    blob_url: str,
+    actual_bytes: int,
+) -> None:
+    if actual_bytes <= 0 or actual_bytes > MAX_UPLOAD_BYTES:
+        raise ValueError("La vidéo dépasse la limite gratuite de 250 Mo.")
+    now = datetime.now(timezone.utc).isoformat()
+    connection = _connect()
+    try:
+        connection.begin()
+        select = (
+            """
+            SELECT blob_url, actual_bytes, status
+            FROM media_uploads
+            WHERE upload_id = ? AND pathname = ?
+            """
+        )
+        if connection.is_postgres:
+            select += " FOR UPDATE"
+        row = connection.execute(
+            select,
+            (upload_id, pathname),
+        ).fetchone()
+        if (
+            row is not None
+            and row["status"] == "uploaded"
+            and row["blob_url"] == blob_url
+            and int(row["actual_bytes"]) == actual_bytes
+        ):
+            connection.commit()
+            return
+        if row is None or row["status"] != "reserved":
+            connection.rollback()
+            raise ValueError("Ce téléversement n’est plus valide.")
+        cursor = connection.execute(
+            """
+            UPDATE media_uploads
+            SET blob_url = ?, actual_bytes = ?, input_reserved_bytes = ?,
+                status = 'uploaded', updated_at = ?
+            WHERE upload_id = ? AND pathname = ? AND status = 'reserved'
+            """,
+            (blob_url, actual_bytes, actual_bytes, now, upload_id, pathname),
+        )
+        if cursor.rowcount != 1:
+            connection.rollback()
+            raise ValueError("Ce téléversement n’est plus valide.")
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def reserve_task_storage(task_id: str, user_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    connection = _connect()
+    try:
+        _begin(connection)
+        if _storage_in_use(connection) + MAX_OUTPUT_BYTES > MAX_STORAGE_BYTES:
+            connection.rollback()
+            raise StorageQuotaError(
+                "Le stockage gratuit est presque plein. Supprimez des Shorts ou réessayez plus tard."
+            )
+        connection.execute(
+            """
+            INSERT INTO media_uploads (
+                upload_id, user_id, pathname, output_reserved_bytes,
+                status, task_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'task', ?, ?, ?)
+            """,
+            (task_id, user_id, f"tasks/{task_id}", MAX_OUTPUT_BYTES, task_id, now, now),
+        )
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def attach_upload_to_task(upload_id: str, user_id: str, task_id: str) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    connection = _connect()
+    try:
+        connection.begin()
+        row = connection.execute(
+            """
+            SELECT pathname, blob_url, actual_bytes, status
+            FROM media_uploads
+            WHERE upload_id = ? AND user_id = ?
+            """,
+            (upload_id, user_id),
+        ).fetchone()
+        if row is None or row["status"] != "uploaded" or not row["blob_url"]:
+            connection.rollback()
+            raise ValueError("Le téléversement est introuvable ou expiré.")
+        cursor = connection.execute(
+            """
+            UPDATE media_uploads
+            SET status = 'attached', task_id = ?, updated_at = ?
+            WHERE upload_id = ? AND user_id = ? AND status = 'uploaded'
+            """,
+            (task_id, now, upload_id, user_id),
+        )
+        if cursor.rowcount != 1:
+            connection.rollback()
+            raise ValueError("Ce téléversement a déjà été utilisé.")
+        connection.commit()
+        return dict(row)
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def update_task_source_storage(task_id: str, blob_url: str, actual_bytes: int) -> None:
+    if actual_bytes <= 0 or actual_bytes > MAX_UPLOAD_BYTES:
+        raise ValueError("La vidéo source dépasse la limite gratuite de 250 Mo.")
+    now = datetime.now(timezone.utc).isoformat()
+    connection = _connect()
+    try:
+        _begin(connection)
+        row = connection.execute(
+            """
+            SELECT input_reserved_bytes, output_reserved_bytes
+            FROM media_uploads WHERE task_id = ? AND status IN ('attached', 'task')
+            """,
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            raise ValueError("La réservation de stockage de cette tâche a expiré.")
+        used = _storage_in_use(connection) - int(row["input_reserved_bytes"])
+        if used + actual_bytes > MAX_STORAGE_BYTES:
+            connection.rollback()
+            raise StorageQuotaError(
+                "Le stockage gratuit est presque plein. Supprimez des Shorts ou réessayez plus tard."
+            )
+        connection.execute(
+            """
+            UPDATE media_uploads
+            SET blob_url = ?, input_reserved_bytes = ?, actual_bytes = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (blob_url, actual_bytes, actual_bytes, now, task_id),
+        )
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def release_task_storage(task_id: str) -> None:
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            UPDATE media_uploads
+            SET status = 'deleted', input_reserved_bytes = 0,
+                output_reserved_bytes = 0, updated_at = ?
+            WHERE task_id = ? OR upload_id = ?
+            """,
+            (datetime.now(timezone.utc).isoformat(), task_id, task_id),
+        )
+
+
+def complete_task_storage(task_id: str, output_bytes: int) -> None:
+    if output_bytes <= 0 or output_bytes > MAX_OUTPUT_BYTES:
+        raise ValueError("Le Short dépasse la limite de stockage gratuite.")
+    now = datetime.now(timezone.utc).isoformat()
+    connection = _connect()
+    try:
+        _begin(connection)
+        row = connection.execute(
+            "SELECT task_id FROM media_uploads WHERE task_id = ? AND status IN ('attached', 'task')",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            raise ValueError("La réservation de stockage de cette tâche a expiré.")
+        connection.execute(
+            "UPDATE task_history SET output_bytes = ?, updated_at = ? WHERE task_id = ?",
+            (output_bytes, now, task_id),
+        )
+        connection.execute(
+            """
+            UPDATE media_uploads
+            SET status = 'deleted', input_reserved_bytes = 0,
+                output_reserved_bytes = 0, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (now, task_id),
+        )
+        connection.commit()
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def set_task_job_status(
+    task_id: str,
+    payload: dict[str, Any],
+    job_status: str,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            UPDATE task_payloads
+            SET payload = ?, job_status = ?, lease_until = NULL, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (json.dumps(payload, ensure_ascii=False), job_status, now, task_id),
+        )
+
+
+def claim_next_task() -> dict[str, Any] | None:
+    now = datetime.now(timezone.utc)
+    lease_until = (now + timedelta(hours=7)).isoformat()
+    now_text = now.isoformat()
+    connection = _connect()
+    try:
+        connection.begin()
+        query = """
+            SELECT h.*, p.payload
+            FROM task_history AS h
+            JOIN task_payloads AS p ON p.task_id = h.task_id
+            WHERE p.job_status = 'queued'
+               OR (p.job_status = 'processing' AND p.lease_until < ?)
+            ORDER BY h.created_at
+            LIMIT 1
+        """
+        if connection.is_postgres:
+            query += " FOR UPDATE OF p SKIP LOCKED"
+        row = connection.execute(query, (now_text,)).fetchone()
+        if row is None:
+            connection.commit()
+            return None
+        payload = json.loads(str(row["payload"]))
+        connection.execute(
+            """
+            UPDATE task_payloads
+            SET job_status = 'processing', lease_until = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (lease_until, now_text, row["task_id"]),
+        )
+        stage = (
+            "Traitement Whisper sur GitHub"
+            if payload.get("job_kind") == "analyze"
+            else "Montage vidéo sur GitHub"
+        )
+        connection.execute(
+            """
+            UPDATE task_history SET status = 'processing', progress = 1,
+                stage = ?, updated_at = ? WHERE task_id = ?
+            """,
+            (stage, now_text, row["task_id"]),
+        )
+        connection.commit()
+        result = dict(row)
+        result["payload"] = payload
+        result["stage"] = stage
+        result["status"] = "processing"
+        result["progress"] = 1
+        return result
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def expire_upload_reservations(cutoff: str) -> list[dict[str, Any]]:
+    connection = _connect()
+    try:
+        connection.begin()
+        rows = connection.execute(
+            """
+            SELECT upload_id, pathname, blob_url
+            FROM media_uploads
+            WHERE status IN ('reserved', 'uploaded') AND task_id IS NULL
+              AND created_at < ?
+            """,
+            (cutoff,),
+        ).fetchall()
+        connection.commit()
+        return [dict(row) for row in rows]
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def list_expired_tasks(cutoff: str) -> list[dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            """
+            SELECT h.task_id, h.user_id, h.status, h.created_at, h.output_bytes,
+                   p.payload
+            FROM task_history AS h
+            LEFT JOIN task_payloads AS p ON p.task_id = h.task_id
+            WHERE h.created_at < ? AND h.status IN ('completed', 'review')
+            """,
+            (cutoff,),
+        ).fetchall()
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        value = dict(row)
+        payload = value.pop("payload")
+        value["payload"] = json.loads(str(payload)) if payload else {}
+        results.append(value)
+    return results
+
+
+def list_abandoned_reviews(cutoff: str) -> list[dict[str, Any]]:
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            """
+            SELECT h.task_id, h.user_id, p.payload
+            FROM task_history AS h
+            JOIN task_payloads AS p ON p.task_id = h.task_id
+            WHERE h.status = 'review' AND h.updated_at < ?
+            """,
+            (cutoff,),
+        ).fetchall()
+    return [
+        {
+            "task_id": row["task_id"],
+            "user_id": row["user_id"],
+            "payload": json.loads(str(row["payload"])),
+        }
+        for row in rows
+    ]
