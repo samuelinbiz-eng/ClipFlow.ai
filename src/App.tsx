@@ -22,9 +22,6 @@ function HomePage() {
           <span className="brand-mark"><Clapperboard size={19} /></span>
           <span>GemClip</span>
         </a>
-        <span className="gc-api-pill">
-          <span className="dot" /> Groq IA & Firestore
-        </span>
         <nav className="landing-nav-actions" aria-label="Navigation principale">
           <a className="landing-login" href="#features">Fonctionnalités</a>
           <a className="landing-login" href="#pricing">Tarifs</a>
@@ -119,7 +116,6 @@ function SessionScreen({ loading, message }: { loading: boolean; message?: strin
           <span className="brand-mark"><Clapperboard size={19} /></span>
           <span>GemClip</span>
         </a>
-        <span className="local-badge"><span className="live-dot" /> Espace sécurisé</span>
       </header>
       <section className="auth-content">
         <article className="auth-card auth-state-card" role={loading ? 'status' : 'alert'}>

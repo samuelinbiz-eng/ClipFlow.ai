@@ -99,7 +99,6 @@ export default function AuthPage({ mode }: AuthPageProps) {
           <span className="brand-mark"><Clapperboard size={19} /></span>
           <span>GemClip</span>
         </a>
-        <span className="local-badge"><span className="live-dot" /> Espace sécurisé</span>
         <a className="subscription-back" href="/" style={{ marginLeft: 'auto' }}>
           <ArrowLeft size={14} /> Accueil
         </a>

@@ -481,21 +481,6 @@ function Header({
         GemClip
       </button>
 
-      <span className="gc-api-pill" title="Moteur IA connecté">
-        <span
-          className="dot"
-          style={{
-            backgroundColor: apiStatus?.groqConfigured ? '#22c55e' : '#f59e0b',
-            boxShadow: apiStatus?.groqConfigured
-              ? '0 0 6px rgba(34, 197, 94, 0.6)'
-              : '0 0 6px rgba(245, 158, 11, 0.6)',
-          }}
-        />
-        {apiStatus?.groqConfigured
-          ? `Groq IA (${apiStatus.groqModel})`
-          : 'Groq IA · Mode Démo'}
-      </span>
-
       <nav className="gc-desktop-nav" aria-label="Navigation principale">
         <button
           type="button"
@@ -504,15 +489,6 @@ function Header({
         >
           <Plus size={14} /> Créer
         </button>
-        {hasActiveShort && (
-          <button
-            type="button"
-            className={screen === 'editor' ? 'is-active' : ''}
-            onClick={() => onNavigate('editor')}
-          >
-            <Scissors size={14} /> Éditeur
-          </button>
-        )}
         <button
           type="button"
           className={screen === 'history' ? 'is-active' : ''}
@@ -520,20 +496,6 @@ function Header({
         >
           <History size={14} /> Historique
           {historyCount > 0 && <span className="badge">{historyCount}</span>}
-        </button>
-        <button
-          type="button"
-          className={screen === 'pricing' ? 'is-active' : ''}
-          onClick={() => onNavigate('pricing')}
-        >
-          <Zap size={14} /> Tarifs & Plus
-        </button>
-        <button
-          type="button"
-          className={screen === 'account' ? 'is-active' : ''}
-          onClick={() => onNavigate('account')}
-        >
-          <Settings2 size={14} /> Compte
         </button>
       </nav>
 
@@ -688,6 +650,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   const [settingsRedo, setSettingsRedo] = useState<SubtitleSettings[]>([])
   const [activeSectionIndex, setActiveSectionIndex] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [isEditingSections, setIsEditingSections] = useState(false)
+  const [sectionDraft, setSectionDraft] = useState('')
   const [apiStatus, setApiStatus] = useState<{
     groqConfigured: boolean
     groqModel: string
@@ -1810,18 +1774,54 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                           </span>
                         </div>
                       ))}
-                      <Button
-                        style={{ minHeight: 32, fontSize: '10px', marginTop: '4px' }}
-                        onClick={() => {
-                          const updated = window.prompt(
-                            'Modifier les sections de sous-titres (1 phrase par ligne)',
-                            activeShort.text,
-                          )
-                          if (updated !== null) updateSubtitle('text', updated)
-                        }}
-                      >
-                        Modifier ou découper les phrases
-                      </Button>
+                      {isEditingSections ? (
+                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <textarea
+                            value={sectionDraft}
+                            onChange={(e) => setSectionDraft(e.target.value)}
+                            rows={4}
+                            style={{
+                              width: '100%',
+                              padding: '8px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--gc-border)',
+                              fontSize: '11px',
+                              fontFamily: 'inherit',
+                              resize: 'vertical',
+                              lineHeight: '1.4',
+                            }}
+                            placeholder="Une phrase par ligne..."
+                          />
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <Button
+                              variant="primary"
+                              style={{ flex: 1, minHeight: 30, fontSize: '10px' }}
+                              onClick={() => {
+                                updateSubtitle('text', sectionDraft)
+                                setIsEditingSections(false)
+                              }}
+                            >
+                              Appliquer les sections
+                            </Button>
+                            <Button
+                              style={{ minHeight: 30, fontSize: '10px' }}
+                              onClick={() => setIsEditingSections(false)}
+                            >
+                              Annuler
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          style={{ minHeight: 32, fontSize: '10px', marginTop: '6px' }}
+                          onClick={() => {
+                            setSectionDraft(activeShort.text)
+                            setIsEditingSections(true)
+                          }}
+                        >
+                          Modifier ou découper les phrases
+                        </Button>
+                      )}
                     </div>
                   </>
                 ) : editorTool === 'Sous-titres' ? (
@@ -2381,7 +2381,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         </section>
       )}
 
-      <BottomNavigation screen={data.screen} onNavigate={navigate} />
+      {data.screen !== 'editor' && <BottomNavigation screen={data.screen} onNavigate={navigate} />}
     </main>
   )
 }
