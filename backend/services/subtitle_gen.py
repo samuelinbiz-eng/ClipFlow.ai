@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from backend.services.ai_analyzer import ClipSelection
-    from backend.services.transcriber import Transcript
+    from .ai_analyzer import ClipSelection
+    from .transcriber import Transcript
 
 SUBTITLE_STYLES = {
     "white": "&H00FFFFFF",

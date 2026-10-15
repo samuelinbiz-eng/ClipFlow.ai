@@ -105,12 +105,12 @@ export default function AuthPage({ mode }: AuthPageProps) {
       <section className="auth-content">
         <article className="auth-card">
           <span className="auth-icon"><Sparkles size={21} /></span>
-          <p className="auth-eyebrow">GEMCLIP</p>
-          <h1>{isRegister ? 'Créez votre compte' : 'Ravi de vous revoir'}</h1>
+          <p className="auth-credit-badge">[X] jetons offerts à l’inscription</p>
+          <h1>{isRegister ? 'Créez votre compte' : 'Bienvenue.'}</h1>
           <p className="auth-intro">
             {isRegister
               ? 'Inscrivez-vous pour créer et retrouver vos Shorts.'
-              : 'Connectez-vous pour continuer à créer vos Shorts.'}
+              : 'Connectez-vous pour transformer vos vidéos en Shorts.'}
           </p>
 
           <button
@@ -186,7 +186,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
             <button className="auth-submit" type="submit" disabled={submitting}>
               {submitting
                 ? <><LoaderCircle className="spin" size={17} /> Patientez…</>
-                : <>{isRegister ? 'Créer mon compte' : 'Se connecter'} <ArrowRight size={17} /></>}
+                : <>{isRegister ? 'Créer mon compte' : 'Continuer avec l’e-mail'} <ArrowRight size={17} /></>}
             </button>
           </form>
 
@@ -198,6 +198,10 @@ export default function AuthPage({ mode }: AuthPageProps) {
           </p>
           {firebaseConfigMessage && <p className="auth-setup-note" role="status">{firebaseConfigMessage}</p>}
           {firebaseConfigured && <p className="auth-note"><LockKeyhole size={13} /> Connexion sécurisée par Firebase.</p>}
+          <p className="auth-legal">
+            En continuant, vous acceptez les <a href="#conditions">Conditions</a> et la{' '}
+            <a href="#confidentialite">Politique de confidentialité</a>.
+          </p>
         </article>
       </section>
       <footer>GemClip <span>·</span> Vos vidéos sont traitées par GemClip.</footer>

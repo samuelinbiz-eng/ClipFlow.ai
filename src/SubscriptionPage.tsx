@@ -50,6 +50,12 @@ export default function SubscriptionPage({ user }: { user: User }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
+  const formattedPrice = config && Number.isFinite(Number(config.price))
+    ? new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: config.currency,
+    }).format(Number(config.price))
+    : '—'
 
   useEffect(() => {
     let cancelled = false
@@ -147,45 +153,94 @@ export default function SubscriptionPage({ user }: { user: User }) {
       </header>
 
       <section className="subscription-content">
-        <article className="subscription-card">
-          {message.startsWith('Votre abonnement') ? (
+        {message.startsWith('Votre abonnement') ? (
+          <article className="subscription-card subscription-confirmation-card">
             <div className="subscription-confirmation" role="status">
               <span className="subscription-icon"><Check size={24} /></span>
               <h1>Abonnement activé</h1>
               <p>{message}</p>
               <a className="subscription-continue" href="/">Continuer vers GemClip</a>
             </div>
-          ) : (
-            <>
-              <span className="subscription-icon"><Clapperboard size={23} /></span>
-              <p className="subscription-eyebrow">GEMCLIP · PREMIUM</p>
-              <h1>Un Short, en quelques clics.</h1>
-              <p className="subscription-intro">Accédez à la création vidéo assistée par IA avec une facturation simple, chaque mois.</p>
+          </article>
+        ) : (
+          <div className="subscription-page">
+            <header className="subscription-hero">
+              <span className="subscription-badge"><span /> GemClip Plus</span>
+              <h1>Publiez tous les jours.<br />Sans compter.</h1>
+              <p>100 jetons par jour. La durée et la qualité choisies déterminent le coût de chaque Short.</p>
+            </header>
 
-              <div className="subscription-price">
-                <strong>5,99&nbsp;$</strong><span>USD / mois</span>
+            <div className="subscription-plans">
+              <article className="plan-card plan-free">
+                <span className="plan-label">Gratuit</span>
+                <strong className="plan-price">0&nbsp;$</strong>
+                <p>10 jetons offerts chaque jour pour essayer GemClip.</p>
+                <ul>
+                  <li><Check size={16} /> Sélection d’extrait par IA</li>
+                  <li><Check size={16} /> Sous-titres configurables</li>
+                  <li><Check size={16} /> Export vidéo MP4</li>
+                </ul>
+                <a className="plan-secondary-button" href="/">Continuer gratuitement</a>
+              </article>
+
+              <article className="plan-card plan-plus">
+                <span className="plan-recommended">Recommandé</span>
+                <span className="plan-label">Plus</span>
+                <div className="plan-price-row">
+                  <strong className="plan-price">{formattedPrice}</strong>
+                  <span>/ mois</span>
+                </div>
+                <p>100 jetons renouvelés chaque jour.</p>
+                <ul>
+                  <li><Check size={16} /> Jusqu’à 100 jetons par jour</li>
+                  <li><Check size={16} /> Choix de la durée et de la qualité</li>
+                  <li><Check size={16} /> Couleur, taille, police et position des sous-titres</li>
+                  <li><Check size={16} /> Téléchargement MP4</li>
+                </ul>
+
+                <div className="paypal-buttons" id="paypal-buttons" ref={buttonContainer} />
+                {loading && <p className="subscription-status">Chargement du paiement sécurisé…</p>}
+                {processing && <p className="subscription-status">Vérification de votre abonnement…</p>}
+                {message && <p className="subscription-status" role="status">{message}</p>}
+                {error && <p className="subscription-error" role="alert">{error}</p>}
+                <p className="subscription-legal">
+                  Abonnement mensuel récurrent traité par PayPal. Gérez ou annulez votre abonnement depuis votre compte PayPal.
+                </p>
+                <p className="subscription-secure"><ShieldCheck size={14} /> GemClip ne stocke pas vos données de paiement.</p>
+              </article>
+            </div>
+
+            <section className="subscription-unlocks" aria-labelledby="unlocks-heading">
+              <h2 id="unlocks-heading">Ce que vous débloquez.</h2>
+              <div className="subscription-benefit-grid">
+                <article><strong>100</strong><h3>jetons par jour</h3><p>Le coût d’un Short dépend de sa durée et de sa résolution.</p></article>
+                <article><strong>9:16</strong><h3>format vertical</h3><p>Choisissez le format de sortie adapté à votre vidéo.</p></article>
+                <article><strong>MP4</strong><h3>prêt à télécharger</h3><p>Récupérez vos créations terminées depuis l’historique.</p></article>
               </div>
+            </section>
 
-              <ul className="subscription-benefits">
-                <li><Check size={16} /> Création de clips assistée par IA</li>
-                <li><Check size={16} /> Recadrage et sous-titres automatiques</li>
-                <li><Check size={16} /> 100 jetons de création renouvelés chaque jour</li>
-                <li><Check size={16} /> Facturation récurrente mensuelle</li>
-              </ul>
+            <section className="subscription-faq" aria-labelledby="faq-heading">
+              <h2 id="faq-heading">Questions fréquentes.</h2>
+              <details>
+                <summary>Comment sont utilisés les jetons&nbsp;?</summary>
+                <p>Chaque création consomme un nombre de jetons calculé selon la durée et la résolution sélectionnées.</p>
+              </details>
+              <details>
+                <summary>Quand les jetons sont-ils renouvelés&nbsp;?</summary>
+                <p>Le quota quotidien est renouvelé selon l’heure de réinitialisation indiquée dans votre espace GemClip.</p>
+              </details>
+              <details>
+                <summary>Comment gérer mon abonnement&nbsp;?</summary>
+                <p>Le paiement récurrent est géré par PayPal. Vous pouvez gérer ou annuler l’abonnement depuis votre compte PayPal.</p>
+              </details>
+            </section>
 
-              <div className="paypal-buttons" ref={buttonContainer} />
-              {loading && <p className="subscription-status">Chargement du paiement sécurisé…</p>}
-              {processing && <p className="subscription-status">Vérification de votre abonnement…</p>}
-              {message && <p className="subscription-status" role="status">{message}</p>}
-              {error && <p className="subscription-error" role="alert">{error}</p>}
-
-              <p className="subscription-legal">
-                Paiement traité de manière sécurisée par PayPal. L’abonnement est renouvelé automatiquement chaque mois ; vous pouvez le gérer ou l’annuler depuis votre compte PayPal.
-              </p>
-              <p className="subscription-secure"><ShieldCheck size={14} /> Vos données de paiement ne sont pas stockées par GemClip.</p>
-            </>
-          )}
-        </article>
+            <aside className="subscription-cta">
+              <div><h2>Votre prochain Short vous attend.</h2><p>{formattedPrice} par mois · Facturation sécurisée avec PayPal.</p></div>
+              <a href="#paypal-buttons">Passer à Plus</a>
+            </aside>
+          </div>
+        )}
       </section>
       <footer>GemClip <span>·</span> Paiement sécurisé avec PayPal</footer>
     </main>

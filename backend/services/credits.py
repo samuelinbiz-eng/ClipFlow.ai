@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.services.paypal import verify_subscription
+from .paypal import verify_subscription
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 FREE_DAILY_CREDITS = 10

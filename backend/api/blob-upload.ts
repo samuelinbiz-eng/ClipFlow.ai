@@ -47,7 +47,7 @@ export async function POST(request: Request): Promise<Response> {
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = parseUploadPayload(clientPayload)
-        const filename = pathname.split('/').at(-1) ?? ''
+        const filename = pathname.slice(pathname.lastIndexOf('/') + 1)
         const suffix = filename.slice(filename.lastIndexOf('.')).toLowerCase()
         if (
           pathname !== payload.pathname

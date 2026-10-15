@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUpRight,
+  AlertCircle,
+  Captions,
   Check,
   Clapperboard,
   Download,
@@ -12,13 +14,15 @@ import {
   RefreshCw,
   Scissors,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Trash2,
+  Zap,
 } from 'lucide-react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import type { User } from 'firebase/auth'
 import AuthPage from './AuthPage'
-import SubscriptionPage from './SubscriptionPage'
+import StudioApp from './StudioApp'
 import { firebaseConfigMessage, getFirebaseAuth } from './firebase'
 import { apiUrl } from './api'
 import {
@@ -81,11 +85,23 @@ const subtitlePreviewSizes: Record<string, number> = {
   large: 19,
   xlarge: 22,
 }
+const subtitleSizeValues = ['xsmall', 'small', 'medium', 'large', 'xlarge'] as const
+const subtitleColorSwatches = ['#93C5FD', '#FDE68A', '#F9A8D4', '#86EFAC'] as const
 const maxUploadBytes = 250 * 1024 * 1024
 
 function formatTime(seconds: number): string {
   const safeSeconds = Math.max(0, Math.floor(seconds))
   return `${Math.floor(safeSeconds / 60).toString().padStart(2, '0')}:${(safeSeconds % 60).toString().padStart(2, '0')}`
+}
+
+function creditResetTime(value: string): string {
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return 'à la prochaine réinitialisation quotidienne'
+  return `à ${new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(timestamp)} UTC`
 }
 
 function HomePage() {
@@ -105,14 +121,14 @@ function HomePage() {
       <section className="landing-hero">
         <div className="landing-copy">
           <span className="landing-eyebrow"><Sparkles size={14} /> LE STUDIO SHORTS PROPULSÉ PAR L’IA</span>
-          <h1>Vos vidéos.<br /><span>Des Shorts qui accrochent.</span></h1>
+          <h1>Une vidéo.<br /><span>Un Short.</span></h1>
           <p className="landing-description">
-            Transformez une vidéo YouTube ou un fichier en clips verticaux sous-titrés.
-            L’IA repère le moment fort, GemClip s’occupe du montage.
+            Collez un lien YouTube ou importez une vidéo. L’IA choisit le meilleur extrait
+            et GemClip ajoute des sous-titres prêts à partager.
           </p>
           <div className="landing-actions">
             <a className="landing-primary" href="/register">Créer mon premier Short <ArrowUpRight size={17} /></a>
-            <span className="landing-free-note">10 jetons offerts chaque jour</span>
+            <span className="landing-free-note">[X] jetons offerts à l’inscription</span>
           </div>
           <div className="landing-points">
             <span><Check size={15} /> Sélection intelligente</span>
@@ -141,10 +157,39 @@ function HomePage() {
         </div>
       </section>
 
-      <section className="landing-features" aria-label="Fonctionnalités">
-        <article><span>01</span><div><strong>Ajoutez une vidéo</strong><p>Collez un lien YouTube ou importez votre fichier.</p></div></article>
-        <article><span>02</span><div><strong>L’IA trouve le bon passage</strong><p>Un extrait captivant, sans montage manuel.</p></div></article>
-        <article><span>03</span><div><strong>Téléchargez votre Short</strong><p>Format vertical et sous-titres prêts à partager.</p></div></article>
+      <section className="landing-platforms" aria-label="Formats de publication">
+        <span>PRÊT À PUBLIER SUR</span>
+        <strong>YouTube Shorts</strong>
+        <strong>TikTok</strong>
+        <strong>Instagram Reels</strong>
+        <strong>Facebook Reels</strong>
+      </section>
+
+      <section className="landing-product-features" aria-labelledby="landing-features-title">
+        <h2 id="landing-features-title">Tout ce qu’il faut, rien de plus.</h2>
+        <div className="landing-features">
+          <article><div><strong>Extrait choisi par l’IA</strong><p>GemClip analyse la vidéo et sélectionne un passage à transformer en Short.</p></div></article>
+          <article><div><strong>Sous-titres configurables</strong><p>Activez les sous-titres et ajustez leur taille, leur police et leur couleur.</p></div></article>
+          <article><div><strong>Export MP4</strong><p>Téléchargez la vidéo générée et partagez-la sur vos plateformes.</p></div></article>
+        </div>
+      </section>
+
+      <section className="landing-pricing" aria-labelledby="landing-pricing-title">
+        <h2 id="landing-pricing-title">Commencez gratuitement.</h2>
+        <div className="landing-plan-grid">
+          <article className="landing-plan-card">
+            <span>Gratuit</span>
+            <h3>[X] jetons pour essayer</h3>
+            <p>Pour essayer GemClip et créer vos premiers Shorts.</p>
+            <a href="/register">Créer un compte</a>
+          </article>
+          <article className="landing-plan-card featured">
+            <span>Plus</span>
+            <h3>100 jetons / jour</h3>
+            <p>Un quota quotidien supérieur pour créer plus de vidéos.</p>
+            <a href="/register">Découvrir GemClip</a>
+          </article>
+        </div>
       </section>
       <footer>GemClip <span>·</span> Le format court, simplement.</footer>
     </main>
@@ -319,6 +364,7 @@ function ClipWorkspace({ user }: { user: User }) {
   const [creditsReload, setCreditsReload] = useState(0)
   const creditDay = useRef(new Date().toISOString().slice(0, 10))
   const fileInput = useRef<HTMLInputElement>(null)
+  const sourceForm = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -422,6 +468,12 @@ function ClipWorkspace({ user }: { user: User }) {
   useEffect(() => {
     if (task?.status === 'review') {
       setReviewStartTime(task.selection_start ?? 0)
+      setAspectRatio(task.aspect_ratio ?? '9:16')
+      setSubtitles(task.subtitles ?? true)
+      setSubtitleColor(task.subtitle_color ?? '#FFD400')
+      setSubtitleSize(task.subtitle_size ?? 'medium')
+      setSubtitlePosition(task.subtitle_position ?? 'bottom')
+      setSubtitleFont(task.subtitle_font ?? 'Arial')
     } else {
       setReviewStartTime(null)
     }
@@ -743,7 +795,15 @@ function ClipWorkspace({ user }: { user: User }) {
       const response = await authenticatedFetch(user, `/api/clip/${task.task_id}/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start_time: reviewStartTime }),
+        body: JSON.stringify({
+          start_time: reviewStartTime,
+          aspect_ratio: aspectRatio,
+          subtitles,
+          subtitle_color: subtitleColor,
+          subtitle_size: subtitleSize,
+          subtitle_position: subtitlePosition,
+          subtitle_font: subtitleFont,
+        }),
       })
       const result = await response.json()
       if (response.status === 401) {
@@ -754,7 +814,20 @@ function ClipWorkspace({ user }: { user: User }) {
       if (!response.ok) {
         throw new Error(formatApiError(result.detail, response.status))
       }
-      setTask({ ...task, status: 'processing', progress: 65, stage: 'Montage FFmpeg' })
+      setTask({
+        ...task,
+        ...{
+          aspect_ratio: aspectRatio,
+          subtitles,
+          subtitle_color: subtitleColor,
+          subtitle_size: subtitleSize,
+          subtitle_position: subtitlePosition,
+          subtitle_font: subtitleFont,
+        },
+        status: 'processing',
+        progress: 65,
+        stage: 'Montage FFmpeg',
+      })
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Impossible de lancer le rendu du Short.')
     }
@@ -836,7 +909,7 @@ function ClipWorkspace({ user }: { user: User }) {
             </div>
           )}
 
-          <section className="creation-settings" aria-label="Options de création">
+          <section className="creation-settings" id="creation-settings" aria-label="Options de création">
             <div className="settings-heading">
               <span>Format du Short</span>
               <span className="settings-summary">
@@ -934,7 +1007,7 @@ function ClipWorkspace({ user }: { user: User }) {
             </details>
           </section>
 
-          <form className="source-form" onSubmit={createClip}>
+          <form className="source-form" ref={sourceForm} onSubmit={createClip}>
             <div className="source-tabs" role="group" aria-label="Source de la vidéo">
               <button
                 className={sourceType === 'youtube' ? 'source-tab active' : 'source-tab'}
@@ -1028,7 +1101,15 @@ function ClipWorkspace({ user }: { user: User }) {
           <div className="result-toolbar">
             <div>
               <span className="result-eyebrow">VOTRE ESPACE · SYNC FIREBASE</span>
-              <h2>{showHistory ? 'Historique des créations' : 'Aperçu du Short'}</h2>
+              <h2>
+                {showHistory
+                  ? 'Historique des créations'
+                  : task?.status === 'review'
+                    ? 'Éditeur du Short'
+                    : task?.status === 'queued' || task?.status === 'processing'
+                      ? 'Génération'
+                      : 'Aperçu du Short'}
+              </h2>
             </div>
             <button
               className={`history-toggle ${showHistory ? 'active' : ''}`}
@@ -1094,6 +1175,43 @@ function ClipWorkspace({ user }: { user: User }) {
               )}
             </div>
 
+          ) : !task && !creditsLoading && credits && !hasEnoughCredits ? (
+            <div className="credit-exhausted-grid">
+              <article className="credit-exhausted-card">
+                <span className="credit-state-icon"><AlertCircle size={20} /></span>
+                <h2>Pas assez de jetons pour ce Short.</h2>
+                <p>
+                  Il vous en reste {credits.remaining} et cette création en demande {tokenCost}.
+                  Réduisez la durée ou la qualité pour continuer.
+                </p>
+                <div className="credit-state-detail">
+                  Votre quota sera renouvelé {creditResetTime(credits.resets_at)}.
+                </div>
+                <a className="credit-secondary-action" href="#creation-settings">Modifier les options</a>
+              </article>
+              <aside className="credit-upgrade-card">
+                <span className="credit-state-icon"><Zap size={20} /></span>
+                <h2>{credits.plan === 'plus' ? 'Vos jetons reviennent bientôt.' : 'Besoin de plus de jetons ?'}</h2>
+                <p>
+                  {credits.plan === 'plus'
+                    ? `Votre quota Plus revient ${creditResetTime(credits.resets_at)}.`
+                    : 'Avec Plus, votre quota passe à 100 jetons renouvelés chaque jour.'}
+                </p>
+                <div
+                  className="credit-quota-track"
+                  role="progressbar"
+                  aria-label="Jetons quotidiens restants"
+                  aria-valuemin={0}
+                  aria-valuemax={credits.daily_allowance}
+                  aria-valuenow={credits.remaining}
+                >
+                  <span style={{ width: `${credits.daily_allowance > 0 ? (credits.remaining / credits.daily_allowance) * 100 : 0}%` }} />
+                </div>
+                {credits.plan === 'plus'
+                  ? <a className="credit-upgrade-action secondary" href="#creation-settings">Modifier la création</a>
+                  : <a className="credit-upgrade-action" href="/subscribe">Passer à Plus <ArrowUpRight size={15} /></a>}
+              </aside>
+            </div>
           ) : !task ? (
             <div className="empty-result">
               <div className="empty-preview" aria-hidden="true">
@@ -1117,10 +1235,43 @@ function ClipWorkspace({ user }: { user: User }) {
               </div>
             </div>
           ) : task.status === 'failed' ? (
-            <>
-              <div className="card-heading"><span className="status-icon failed">!</span><div><h2>Le traitement a échoué</h2><p>{task.stage || 'Une erreur est survenue pendant la création.'}</p></div></div>
-              <p className="task-error">{task.error || 'Erreur inconnue.'}</p>
-            </>
+            <div className="task-failure-grid">
+              <article className="task-failure-card">
+                <span className="credit-state-icon error"><AlertCircle size={20} /></span>
+                <h2>Impossible de lire cette vidéo.</h2>
+                <p>Vérifiez que le lien est accessible, puis relancez la création.</p>
+                <p className="task-error">{task.error || 'Une erreur est survenue pendant la création.'}</p>
+                <button className="task-retry-button" type="button" onClick={() => sourceForm.current?.requestSubmit()}>
+                  Réessayer <RefreshCw size={15} />
+                </button>
+                <button
+                  className="task-change-source"
+                  type="button"
+                  onClick={() => {
+                    setTask(null)
+                    setUrl('')
+                    setVideoFile(null)
+                    setSourceType('youtube')
+                    setFormError('')
+                  }}
+                >
+                  Changer de source
+                </button>
+              </article>
+              <aside className="credit-upgrade-card">
+                <span className="credit-state-icon"><Zap size={20} /></span>
+                <h2>{credits?.plan === 'plus' ? 'Vos jetons reviennent bientôt.' : 'Plus de jetons chaque jour.'}</h2>
+                <p>
+                  {credits?.plan === 'plus'
+                    ? `Votre quota Plus revient ${creditResetTime(credits.resets_at)}.`
+                    : 'Plus vous donne 100 jetons renouvelés chaque jour.'}
+                </p>
+                <div className="credit-quota-track"><span style={{ width: `${credits && credits.daily_allowance > 0 ? (credits.remaining / credits.daily_allowance) * 100 : 0}%` }} /></div>
+                {credits?.plan === 'plus'
+                  ? <a className="credit-upgrade-action secondary" href="#creation-settings">Retour aux options</a>
+                  : <a className="credit-upgrade-action" href="/subscribe">Passer à Plus <ArrowUpRight size={15} /></a>}
+              </aside>
+            </div>
           ) : task.status === 'review' ? (
             (() => {
               const clipDuration = Math.max(
@@ -1131,38 +1282,205 @@ function ClipWorkspace({ user }: { user: User }) {
               const sourceDuration = task.source_duration ?? clipDuration
               const maxStart = Math.max(0, sourceDuration - clipDuration)
               const start = Math.min(reviewStartTime ?? task.selection_start ?? 0, maxStart)
+              const selectionLeft = sourceDuration > 0 ? (start / sourceDuration) * 100 : 0
+              const selectionWidth = sourceDuration > 0 ? (clipDuration / sourceDuration) * 100 : 100
+              const selectedSizeIndex = Math.max(0, subtitleSizeValues.indexOf(subtitleSize as typeof subtitleSizeValues[number]))
 
               return (
-                <div className="clip-review">
-                  <div className="card-heading">
-                    <span className="status-icon success"><Scissors size={17} /></span>
-                    <div><h2>Ajustez votre extrait</h2><p>{task.titre}</p></div>
+                <div className="editor-screen">
+                  <header className="editor-toolbar">
+                    <button className="editor-back" type="button" onClick={() => { setTask(null); setFormError('') }}>
+                      <ArrowUpRight size={14} /> Retour à la création
+                    </button>
+                    <div className="editor-document-title">
+                      <strong>{task.titre || 'Mon Short'}</strong>
+                      <span>Brouillon · enregistrement automatique</span>
+                    </div>
+                    <button className="editor-history-button" type="button" onClick={() => void openHistory()}>
+                      <History size={15} /> Historique
+                    </button>
+                  </header>
+
+                  <div className="editor-workspace">
+                    <nav className="editor-tools" aria-label="Outils de l’éditeur">
+                      <a className="active" href="#editor-excerpt"><Scissors size={18} /><span>Extrait</span></a>
+                      <a href="#editor-captions"><Captions size={18} /><span>Sous-titres</span></a>
+                      <a href="#editor-format"><Smartphone size={18} /><span>Format</span></a>
+                    </nav>
+
+                    <section className="editor-stage" aria-label="Aperçu du Short">
+                      <div className="editor-phone-preview" style={{ aspectRatio: aspectRatio.replace(':', ' / ') }}>
+                        <span className="editor-preview-title">{task.titre || 'Votre Short'}</span>
+                        {subtitles && (
+                          <span
+                            className={`editor-caption-preview position-${subtitlePosition}`}
+                            style={{
+                              color: subtitleColor,
+                              fontFamily: subtitleFont,
+                              fontSize: `${subtitlePreviewSizes[subtitleSize] ?? 16}px`,
+                            }}
+                          >
+                            Aperçu des sous-titres
+                          </span>
+                        )}
+                        <span className="editor-preview-progress"><span style={{ width: `${task.progress}%` }} /></span>
+                      </div>
+                      <span className="editor-preview-format">Aperçu {aspectRatio} · {resolution}p</span>
+                    </section>
+
+                    <aside className="editor-settings">
+                      <section id="editor-excerpt" className="editor-setting-section">
+                        <h3><Scissors size={16} /> Extrait</h3>
+                        {task.explication && <p className="editor-explanation">{task.explication}</p>}
+                        <p className="clip-review-note">
+                          Déplacez la sélection pour choisir un autre passage. Sa durée reste de {Math.round(clipDuration)} secondes.
+                        </p>
+                        <div className="clip-range-labels">
+                          <span>Début <strong>{formatTime(start)}</strong></span>
+                          <span>Fin <strong>{formatTime(start + clipDuration)}</strong></span>
+                        </div>
+                        <input
+                          className="clip-range"
+                          aria-label="Déplacer le passage vidéo"
+                          type="range"
+                          min="0"
+                          max={maxStart}
+                          step="0.1"
+                          value={start}
+                          onChange={(event) => setReviewStartTime(Number(event.target.value))}
+                        />
+                        <div className="clip-range-scale">
+                          <span>00:00</span>
+                          <span>{formatTime(sourceDuration)}</span>
+                        </div>
+                      </section>
+
+                      <section id="editor-captions" className="editor-setting-section">
+                        <div className="editor-section-title">
+                          <h3><Captions size={16} /> Sous-titres</h3>
+                          <label className="editor-toggle">
+                            <input type="checkbox" checked={subtitles} onChange={(event) => setSubtitles(event.target.checked)} />
+                            <span>{subtitles ? 'Activés' : 'Désactivés'}</span>
+                          </label>
+                        </div>
+                        <label className="editor-field-label" htmlFor="editor-subtitle-size">Taille</label>
+                        <input
+                          id="editor-subtitle-size"
+                          className="editor-slider"
+                          type="range"
+                          min="0"
+                          max={subtitleSizeValues.length - 1}
+                          step="1"
+                          value={selectedSizeIndex}
+                          onChange={(event) => setSubtitleSize(subtitleSizeValues[Number(event.target.value)])}
+                          disabled={!subtitles}
+                        />
+                        <div className="editor-setting-heading">Couleur</div>
+                        <div className="editor-color-swatches" role="group" aria-label="Couleur des sous-titres">
+                          {subtitleColorSwatches.map((color) => (
+                            <button
+                              key={color}
+                              className={subtitleColor === color ? 'selected' : ''}
+                              type="button"
+                              style={{ backgroundColor: color }}
+                              aria-label={`Choisir la couleur ${color}`}
+                              aria-pressed={subtitleColor === color}
+                              onClick={() => setSubtitleColor(color)}
+                              disabled={!subtitles}
+                            />
+                          ))}
+                          <label className="editor-custom-color" title="Choisir une couleur personnalisée">
+                            <input
+                              aria-label="Couleur personnalisée des sous-titres"
+                              type="color"
+                              value={subtitleColor}
+                              onChange={(event) => setSubtitleColor(event.target.value.toUpperCase())}
+                              disabled={!subtitles}
+                            />
+                          </label>
+                        </div>
+                        <div className="editor-setting-heading">Position</div>
+                        <div className="editor-choice-group">
+                          {(['top', 'center', 'bottom'] as const).map((position) => (
+                            <button
+                              key={position}
+                              className={subtitlePosition === position ? 'selected' : ''}
+                              type="button"
+                              aria-pressed={subtitlePosition === position}
+                              onClick={() => setSubtitlePosition(position)}
+                              disabled={!subtitles}
+                            >
+                              {position === 'top' ? 'Haut' : position === 'center' ? 'Milieu' : 'Bas'}
+                            </button>
+                          ))}
+                        </div>
+                        <label className="editor-field-label" htmlFor="editor-subtitle-font">Police</label>
+                        <select
+                          id="editor-subtitle-font"
+                          className="editor-font-select"
+                          value={subtitleFont}
+                          onChange={(event) => setSubtitleFont(event.target.value)}
+                          disabled={!subtitles}
+                        >
+                          <option value="Arial">Arial</option>
+                          <option value="DejaVu Sans">DejaVu Sans</option>
+                          <option value="Liberation Sans">Liberation Sans</option>
+                          <option value="Noto Sans">Noto Sans</option>
+                        </select>
+                      </section>
+
+                      <section id="editor-format" className="editor-setting-section">
+                        <h3><Smartphone size={16} /> Format</h3>
+                        <label className="editor-field-label" htmlFor="editor-aspect-ratio">Format vidéo</label>
+                        <select
+                          id="editor-aspect-ratio"
+                          className="editor-font-select"
+                          value={aspectRatio}
+                          onChange={(event) => setAspectRatio(event.target.value)}
+                        >
+                          <option value="9:16">Vertical · 9:16</option>
+                          <option value="1:1">Carré · 1:1</option>
+                          <option value="16:9">Paysage · 16:9</option>
+                        </select>
+                        <p className="editor-format-note">Durée fixe : {Math.round(clipDuration)} s · Qualité : {resolution}p · {task.credit_cost ?? tokenCost} jetons</p>
+                      </section>
+                    </aside>
                   </div>
-                  {task.explication && <p className="explanation">{task.explication}</p>}
-                  <p className="clip-review-note">
-                    Déplacez la sélection pour choisir un autre passage. Sa durée reste de {Math.round(clipDuration)} secondes. La vidéo source est conservée 24 heures.
-                  </p>
-                  <div className="clip-range-labels">
-                    <span>Début <strong>{formatTime(start)}</strong></span>
-                    <span>Fin <strong>{formatTime(start + clipDuration)}</strong></span>
+
+                  <section className="editor-timeline" aria-labelledby="editor-timeline-title">
+                    <div className="editor-timeline-toolbar">
+                      <h3 id="editor-timeline-title">Sélection de l’extrait</h3>
+                      <span>{formatTime(start)} — {formatTime(start + clipDuration)}</span>
+                    </div>
+                    <div className="editor-timeline-track">
+                      <span className="editor-timeline-selection" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
+                      <input
+                        className="editor-timeline-range"
+                        aria-label="Déplacer la sélection sur la chronologie"
+                        type="range"
+                        min="0"
+                        max={maxStart}
+                        step="0.1"
+                        value={start}
+                        onChange={(event) => setReviewStartTime(Number(event.target.value))}
+                      />
+                    </div>
+                    <div className="editor-timeline-scale"><span>00:00</span><span>{formatTime(sourceDuration)}</span></div>
+                    <div className="editor-timeline-caption">
+                      <span>Sous-titres</span>
+                      <span className={subtitles ? 'active' : ''}>
+                        {subtitles ? 'Sous-titres activés · style personnalisable' : 'Sous-titres désactivés'}
+                      </span>
+                    </div>
+                  </section>
+
+                  <div className="editor-finalize">
+                    <p>La source est conservée temporairement pour finaliser votre sélection.</p>
+                    <button className="editor-export-button" type="button" onClick={() => void renderSelectedClip()}>
+                      <Sparkles size={15} /> Créer ce Short
+                    </button>
                   </div>
-                  <input
-                    className="clip-range"
-                    aria-label="Déplacer le passage vidéo"
-                    type="range"
-                    min="0"
-                    max={maxStart}
-                    step="0.1"
-                    value={start}
-                    onChange={(event) => setReviewStartTime(Number(event.target.value))}
-                  />
-                  <div className="clip-range-scale">
-                    <span>00:00</span>
-                    <span>{formatTime(sourceDuration)}</span>
-                  </div>
-                  <button className="download-link" type="button" onClick={() => void renderSelectedClip()}>
-                    <Sparkles size={15} /> Créer ce Short
-                  </button>
+                  {formError && <p className="error-message" role="alert">{formError}</p>}
                 </div>
               )
             })()
@@ -1193,16 +1511,33 @@ function ClipWorkspace({ user }: { user: User }) {
               {videoObjectUrl && <a className="download-link" href={videoObjectUrl} download="gemclip-short.mp4">Télécharger la vidéo <ArrowUpRight size={15} /></a>}
             </>
           ) : (
-            <>
-              <div className="card-heading"><span className="status-icon processing"><LoaderCircle className="spin" size={17} /></span><div><h2>Création de votre Short</h2><p>{task.stage || 'Préparation du traitement...'}</p></div><strong className="percentage">{task.progress}%</strong></div>
-              <div className="progress-track"><div className="progress-value" style={{ width: `${task.progress}%` }} /></div>
-              <div className="steps-row">
-                {steps.map((step, index) => (
-                  <span key={step} className={index < activeStep ? 'step done' : index === activeStep ? 'step current' : 'step'}>{step}</span>
-                ))}
+            <div className="processing-layout">
+              <section className="processing-status-card">
+                <div className="card-heading">
+                  <span className="status-icon processing"><LoaderCircle className="spin" size={17} /></span>
+                  <div><h2>Création en cours…</h2><p>{task.stage || 'Préparation du traitement…'}</p></div>
+                  <strong className="percentage">{task.progress}%</strong>
+                </div>
+                <p className="processing-credit-note">
+                  Gardez cette page ouverte. {task.credit_cost ?? tokenCost} jeton{(task.credit_cost ?? tokenCost) === 1 ? '' : 's'} utilisés.
+                </p>
+                <div className="progress-track"><div className="progress-value" style={{ width: `${task.progress}%` }} /></div>
+                <div className="steps-row">
+                  {steps.map((step, index) => (
+                    <span key={step} className={index < activeStep ? 'step done' : index === activeStep ? 'step current' : 'step'}>{step}</span>
+                  ))}
+                </div>
+                <p className="progress-note">Le traitement continue sur le serveur. Retrouvez vos créations dans l’historique.</p>
+              </section>
+              <div className="processing-preview-wrap">
+                <div className="processing-preview" aria-label={`Aperçu vertical au format ${task.aspect_ratio || aspectRatio}`}>
+                  <span>Votre Short</span>
+                  <strong>arrive</strong>
+                  <div className="processing-preview-progress"><span style={{ width: `${task.progress}%` }} /></div>
+                </div>
+                <p>Aperçu {task.aspect_ratio || aspectRatio}</p>
               </div>
-              <p className="progress-note">Le traitement continue sur le serveur. Vous pouvez revenir à votre historique.</p>
-            </>
+            </div>
           )}
         </section>
       </div>
@@ -1249,6 +1584,6 @@ export default function App() {
     return <SessionScreen loading={false} message={sessionError} />
   }
   if (!user) return isPublicHome ? <HomePage /> : null
-  if (path === '/subscribe') return <SubscriptionPage user={user} />
-  return <ClipWorkspace user={user} />
+  if (path === '/legacy') return <ClipWorkspace user={user} />
+  return <StudioApp user={user} initialScreen={path === '/subscribe' ? 'pricing' : undefined} />
 }

@@ -8,7 +8,7 @@ from typing import Callable
 
 import cv2
 
-from backend.services.ai_analyzer import ClipSelection
+from .ai_analyzer import ClipSelection
 
 
 @dataclass

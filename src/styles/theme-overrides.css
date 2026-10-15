@@ -1,0 +1,675 @@
+/* GemClip's warm, minimal studio theme */
+.app-shell {
+  width: min(100% - 64px, 1180px);
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: auto;
+  overflow: visible;
+}
+
+.topbar {
+  flex: 0 0 64px;
+  margin-top: 14px;
+  border-color: var(--paypal-card-border);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(20, 27, 46, 0.035);
+}
+
+.brand-mark {
+  border-radius: 10px;
+  background: var(--paypal-navy);
+  box-shadow: none;
+}
+
+.workspace {
+  min-height: calc(100dvh - 100px);
+  grid-template-columns: minmax(330px, .88fr) minmax(0, 1.12fr);
+  gap: 22px;
+  padding: 24px 0;
+  overflow: visible;
+}
+
+.control-panel,
+.result-card {
+  height: auto;
+  min-height: 0;
+  border-color: var(--paypal-card-border);
+  border-radius: 16px;
+  box-shadow: 0 5px 20px rgba(20, 27, 46, 0.035);
+}
+
+.control-panel {
+  overflow: visible;
+  padding: clamp(22px, 3vw, 34px);
+}
+
+.result-card {
+  overflow: visible;
+  padding: clamp(22px, 3vw, 34px);
+}
+
+.result-card > .empty-result {
+  min-height: 420px;
+  overflow: visible;
+}
+
+.creation-settings {
+  border-color: var(--paypal-card-border);
+  border-radius: 14px;
+  background: #faf9f6;
+}
+
+.source-tabs {
+  border-radius: 13px;
+  background: #f1f0ec;
+}
+
+.source-input,
+.source-input.file-picker {
+  height: 46px;
+  border-color: var(--paypal-card-border);
+  border-radius: 12px;
+}
+
+.settings-grid select,
+.subtitle-color-control {
+  border-color: var(--paypal-card-border);
+  border-radius: 10px;
+}
+
+.primary-settings .subtitle-option {
+  min-height: 36px;
+  border-color: var(--paypal-card-border);
+  border-radius: 10px;
+}
+
+.create-button,
+.auth-submit {
+  border-radius: 11px;
+  background: var(--paypal-navy);
+  box-shadow: none;
+}
+
+.create-button:hover:not(:disabled),
+.auth-submit:hover:not(:disabled) {
+  background: var(--paypal-blue);
+  box-shadow: 0 5px 14px rgba(49, 95, 228, 0.2);
+}
+
+.empty-preview {
+  border-color: #252c40;
+  border-radius: 18px;
+  background: var(--paypal-navy);
+  box-shadow: 0 16px 36px rgba(20, 27, 46, 0.13);
+  transform: none;
+}
+
+.empty-preview-scene {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(49, 95, 228, .2), transparent 48%),
+    var(--paypal-navy);
+}
+
+.empty-preview-progress span {
+  background: var(--paypal-blue);
+}
+
+.landing-copy h1 span {
+  color: var(--paypal-blue);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+.landing-preview {
+  border-radius: 18px;
+  box-shadow: 0 16px 36px rgba(20, 27, 46, 0.1);
+  transform: none;
+}
+
+.landing-preview-scene {
+  background:
+    radial-gradient(ellipse at 50% 35%, rgba(49, 95, 228, .25), transparent 42%),
+    var(--paypal-navy);
+}
+
+.landing-caption strong {
+  color: #a9c1ff;
+}
+
+.auth-card,
+.subscription-card {
+  border-color: var(--paypal-card-border);
+  border-radius: 18px;
+  box-shadow: 0 12px 36px rgba(20, 27, 46, 0.07);
+}
+
+.google-auth-button,
+.auth-input,
+.subscription-nav,
+.subscription-back,
+.history-toggle {
+  border-color: var(--paypal-card-border);
+}
+
+.paypal-buttons {
+  min-height: 48px;
+}
+
+.subscription-content {
+  overflow: visible;
+}
+
+.auth-card,
+.subscription-card {
+  margin-block: auto;
+}
+
+@media (max-width: 800px) {
+  .app-shell {
+    width: min(100% - 36px, 620px);
+  }
+
+  .workspace {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 14px;
+    padding: 16px 0 28px;
+  }
+
+  .control-panel,
+  .result-card {
+    height: auto;
+    min-height: 0;
+    padding: 22px;
+  }
+
+  .result-card > .empty-result {
+    min-height: 360px;
+  }
+
+  .landing-shell {
+    width: min(100% - 32px, 700px);
+  }
+}
+
+@media (max-width: 460px) {
+  .app-shell {
+    width: min(100% - 24px, 620px);
+  }
+
+  .topbar {
+    min-width: 0;
+    height: 58px;
+    flex-basis: 58px;
+    margin-top: 10px;
+    padding: 0 10px;
+  }
+
+  .brand {
+    gap: 7px;
+    font-size: 17px;
+  }
+
+  .brand-mark {
+    width: 29px;
+    height: 29px;
+  }
+
+  .account-actions {
+    gap: 5px;
+  }
+
+  .subscription-nav {
+    padding: 7px 9px;
+    font-size: 10px;
+  }
+
+  .control-panel,
+  .result-card {
+    padding: 18px;
+  }
+
+  .result-toolbar {
+    align-items: flex-start;
+  }
+
+  .result-toolbar h2 {
+    font-size: 16px;
+  }
+
+  .history-toggle {
+    min-height: 32px;
+    gap: 5px;
+    padding: 0 9px;
+    font-size: 10px;
+  }
+
+  .result-card > .empty-result {
+    min-height: 320px;
+  }
+
+  .subscription-content,
+  .auth-content {
+    padding: 14px 8px 24px;
+  }
+
+  .subscription-card,
+  .auth-card {
+    margin-block: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .app-shell {
+    width: min(100% - 16px, 620px);
+  }
+
+  .topbar {
+    padding: 0 7px;
+  }
+
+  .account-actions {
+    gap: 3px;
+  }
+
+  .subscription-nav {
+    padding-inline: 7px;
+  }
+
+  .control-panel,
+  .result-card {
+    padding: 14px;
+  }
+}
+
+/* Refined GemClip screens, aligned with the supplied interface references. */
+:root {
+  --paypal-navy: #11182a;
+  --paypal-deep-blue: #202b45;
+  --paypal-blue: #2451df;
+  --paypal-blue-hover: #1d43c0;
+  --paypal-light-blue: #91c3ff;
+  --paypal-soft-blue: #eff5ff;
+  --paypal-soft-blue-border: #d9e6fb;
+  --paypal-bg: #f8f9fb;
+  --paypal-card-border: #dce4ee;
+  --paypal-subtle-border: #edf0f4;
+  --paypal-text-main: #11182a;
+  --paypal-text-secondary: #506078;
+  --paypal-text-muted: #71809a;
+  color: var(--paypal-text-main);
+  background: var(--paypal-bg);
+}
+
+body::before {
+  background-image:
+    linear-gradient(rgba(17, 24, 42, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 24, 42, 0.055) 1px, transparent 1px);
+  background-size: 96px 96px;
+}
+
+.app-shell {
+  width: min(100% - 64px, 1320px);
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: auto;
+  overflow: visible;
+}
+
+.topbar {
+  flex: 0 0 64px;
+  margin-top: 14px;
+  border-color: transparent;
+  border-radius: 14px;
+  background: rgba(248, 249, 251, 0.88);
+  box-shadow: none;
+}
+
+.brand-mark {
+  border-radius: 9px;
+  background: var(--paypal-navy);
+  box-shadow: none;
+}
+
+.workspace {
+  min-height: calc(100dvh - 100px);
+  grid-template-columns: minmax(340px, .9fr) minmax(0, 1.1fr);
+  grid-template-rows: auto;
+  align-items: stretch;
+  gap: 22px;
+  padding: 24px 0 36px;
+  overflow: visible;
+}
+
+.control-panel,
+.result-card {
+  height: auto;
+  min-height: 0;
+  border-color: var(--paypal-card-border);
+  border-radius: 22px;
+  box-shadow: 0 12px 34px rgba(17, 24, 42, 0.045);
+}
+
+.control-panel {
+  overflow: visible;
+  padding: clamp(24px, 3vw, 36px);
+}
+
+.result-card {
+  overflow: visible;
+  padding: clamp(24px, 3vw, 36px);
+}
+
+.control-panel h1 {
+  margin: 18px 0 8px;
+  font-size: clamp(32px, 3.5vw, 46px);
+  line-height: 1.04;
+  letter-spacing: -1.8px;
+}
+
+.control-panel h1 span {
+  color: inherit;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+.panel-description {
+  margin-bottom: 22px;
+  font-size: 14px;
+}
+
+.credit-balance {
+  min-height: 52px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-color: var(--paypal-card-border);
+  border-radius: 14px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.creation-settings {
+  margin-bottom: 18px;
+  padding: 16px;
+  border-color: var(--paypal-card-border);
+  border-radius: 16px;
+  background: #fbfcfe;
+}
+
+.settings-grid select,
+.subtitle-color-control {
+  min-height: 42px;
+  border-color: var(--paypal-card-border);
+  border-radius: 11px;
+  background: #fff;
+}
+
+.primary-settings .subtitle-option {
+  min-height: 42px;
+  border-color: var(--paypal-navy);
+  border-radius: 11px;
+  color: #fff;
+  background: var(--paypal-navy);
+}
+
+.advanced-settings {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-color: var(--paypal-card-border);
+}
+
+.advanced-settings summary {
+  color: var(--paypal-blue);
+}
+
+.subtitle-preview {
+  min-height: 56px;
+  border: 1px solid var(--paypal-card-border);
+  border-radius: 11px;
+  background: var(--paypal-navy);
+}
+
+.source-form {
+  gap: 11px;
+}
+
+.source-tabs {
+  padding: 4px;
+  border: 1px solid var(--paypal-card-border);
+  border-radius: 14px;
+  background: #f0f3f8;
+}
+
+.source-tab {
+  min-height: 40px;
+  border-radius: 10px;
+}
+
+.source-tab.active {
+  color: #fff;
+  background: var(--paypal-navy);
+  box-shadow: none;
+}
+
+.source-input,
+.source-input.file-picker {
+  height: 54px;
+  border-color: var(--paypal-card-border);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.create-button,
+.auth-submit {
+  min-height: 52px;
+  border-radius: 13px;
+  background: var(--paypal-blue);
+  box-shadow: none;
+}
+
+.create-button:hover:not(:disabled),
+.auth-submit:hover:not(:disabled) {
+  background: var(--paypal-blue-hover);
+  box-shadow: 0 8px 20px rgba(36, 81, 223, 0.18);
+}
+
+.feature-list {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-color: var(--paypal-card-border);
+}
+
+.result-card > .empty-result {
+  min-height: 540px;
+  overflow: visible;
+}
+
+.empty-preview {
+  width: min(100%, 260px);
+  padding: 0;
+  border: 0;
+  border-radius: 30px;
+  background: transparent;
+  box-shadow: 0 22px 48px rgba(17, 24, 42, 0.16);
+}
+
+.empty-preview-format {
+  margin: 0 0 9px;
+  color: var(--paypal-text-muted);
+  font-size: 10px;
+}
+
+.empty-preview-scene {
+  height: auto;
+  aspect-ratio: 9 / 16;
+  border-radius: 30px;
+  background: var(--paypal-navy);
+}
+
+.empty-preview-glow {
+  display: none;
+}
+
+.empty-preview-play {
+  display: none;
+}
+
+.empty-preview-caption {
+  bottom: 45%;
+  gap: 2px;
+  font-size: 17px;
+  letter-spacing: -.2px;
+  text-shadow: none;
+}
+
+.empty-preview-caption strong {
+  color: var(--paypal-light-blue);
+}
+
+.empty-preview-progress {
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  height: 4px;
+}
+
+.preview-features {
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.preview-features span {
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 10px;
+}
+
+.result-toolbar {
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--paypal-card-border);
+}
+
+.result-toolbar h2 {
+  color: var(--paypal-navy);
+  font-size: 21px;
+}
+
+.card-heading {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.card-heading h2 {
+  font-size: 24px;
+  letter-spacing: -.7px;
+}
+
+.card-heading p {
+  margin-top: 3px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.progress-track {
+  height: 8px;
+  margin: 20px 0;
+  background: #e3e9f1;
+}
+
+.progress-value {
+  background: var(--paypal-blue);
+}
+
+.steps-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 13px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--paypal-text-muted);
+  font-size: 14px;
+}
+
+.step::before {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #cbd5e1;
+  border-radius: 50%;
+  color: transparent;
+  content: '';
+}
+
+.step.done::before {
+  border-color: var(--paypal-blue);
+  color: #fff;
+  background: var(--paypal-blue);
+  content: '✓';
+  font-size: 12px;
+}
+
+.step.current::before {
+  border-color: var(--paypal-blue);
+  background: radial-gradient(circle, var(--paypal-blue) 0 4px, transparent 4.5px);
+}
+
+.progress-note {
+  margin-top: 20px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.task-error {
+  border-color: #f3c4c7;
+  border-radius: 14px;
+}
+
+.clip-review {
+  padding-block: 12px;
+}
+
+.clip-range {
+  height: 28px;
+}
+
+.video-result {
+  width: min(100%, 420px);
+  max-height: min(66vh, 720px);
+  border-radius: 20px;
+}
+
+.history-toggle {
+  min-height: 40px;
+  border-color: var(--paypal-card-border);
+  border-radius: 11px;
+}
+
+.history-toggle.active {
+  border-color: var(--paypal-navy);
+  color: #fff;
+  background: var(--paypal-navy);
+}
+
+.history-panel {
+  padding-top: 16px;
+}
+
+.history-item {
+  padding: 13px;
+  border-color: var(--paypal-card-border);
+  border-radius: 13px;
+}
+
+.video-result {
+  max-height: min(62vh, 680px);
+  border-radius: 18px;
+  background: var(--paypal-navy);
+}

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from groq import AuthenticationError, Groq
 
 if TYPE_CHECKING:
-    from backend.services.transcriber import Transcript
+    from .transcriber import Transcript
 
 
 @dataclass

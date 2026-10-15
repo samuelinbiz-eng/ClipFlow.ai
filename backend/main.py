@@ -6,12 +6,15 @@ import math
 import os
 import shutil
 import secrets
+import sys
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Literal
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dotenv import load_dotenv
 from fastapi import (
@@ -27,40 +30,76 @@ from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, field_validator
 
-from backend.services.credits import (
-    MAX_OUTPUT_BYTES,
-    MAX_UPLOAD_BYTES,
-    InsufficientCreditsError,
-    StorageQuotaError,
-    activate_subscription,
-    attach_upload_to_task,
-    claim_next_task,
-    complete_task_storage,
-    complete_upload_storage,
-    credit_balance,
-    delete_task_history,
-    expire_upload_reservations,
-    get_media_upload,
-    get_task_history,
-    get_task_payload,
-    list_abandoned_reviews,
-    list_expired_tasks,
-    list_task_history,
-    record_task,
-    release_task_storage,
-    reserve_credits,
-    reserve_task_storage,
-    reserve_upload_storage,
-    save_task_payload,
-    set_task_job_status,
-    short_cost,
-    settle_credits,
-    update_task_history,
-    update_task_source_storage,
-)
-from backend.services.auth import current_user
-from backend.services.paypal import get_subscription_config
-from backend.services.subtitle_gen import validate_subtitle_color
+if __package__:
+    from backend.services.credits import (
+        MAX_OUTPUT_BYTES,
+        MAX_UPLOAD_BYTES,
+        InsufficientCreditsError,
+        StorageQuotaError,
+        activate_subscription,
+        attach_upload_to_task,
+        claim_next_task,
+        complete_task_storage,
+        complete_upload_storage,
+        credit_balance,
+        delete_task_history,
+        expire_upload_reservations,
+        get_media_upload,
+        get_task_history,
+        get_task_payload,
+        list_abandoned_reviews,
+        list_expired_tasks,
+        list_task_history,
+        record_task,
+        release_task_storage,
+        reserve_credits,
+        reserve_task_storage,
+        reserve_upload_storage,
+        save_task_payload,
+        set_task_job_status,
+        short_cost,
+        settle_credits,
+        update_task_history,
+        update_task_source_storage,
+    )
+    from backend.services.auth import current_user
+    from backend.services.paypal import get_subscription_config
+    from backend.services.subtitle_gen import validate_subtitle_color
+else:
+    from services.credits import (
+        MAX_OUTPUT_BYTES,
+        MAX_UPLOAD_BYTES,
+        InsufficientCreditsError,
+        StorageQuotaError,
+        activate_subscription,
+        attach_upload_to_task,
+        claim_next_task,
+        complete_task_storage,
+        complete_upload_storage,
+        credit_balance,
+        delete_task_history,
+        expire_upload_reservations,
+        get_media_upload,
+        get_task_history,
+        get_task_payload,
+        list_abandoned_reviews,
+        list_expired_tasks,
+        list_task_history,
+        record_task,
+        release_task_storage,
+        reserve_credits,
+        reserve_task_storage,
+        reserve_upload_storage,
+        save_task_payload,
+        set_task_job_status,
+        short_cost,
+        settle_credits,
+        update_task_history,
+        update_task_source_storage,
+    )
+    from services.auth import current_user
+    from services.paypal import get_subscription_config
+    from services.subtitle_gen import validate_subtitle_color
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR.parent / ".env")
@@ -128,6 +167,17 @@ class PayPalSubscriptionRequest(BaseModel):
 
 class RenderClipRequest(BaseModel):
     start_time: float
+    aspect_ratio: Literal["9:16", "1:1", "16:9"] | None = None
+    subtitles: bool | None = None
+    subtitle_color: str | None = None
+    subtitle_size: Literal["xsmall", "small", "medium", "large", "xlarge"] | None = None
+    subtitle_position: Literal["bottom", "center", "top"] | None = None
+    subtitle_font: Literal["Arial", "DejaVu Sans", "Liberation Sans", "Noto Sans"] | None = None
+
+    @field_validator("subtitle_color")
+    @classmethod
+    def validate_subtitle_color_value(cls, value: str | None) -> str | None:
+        return validate_subtitle_color(value) if value is not None else None
 
 
 class BlobUploadReservationRequest(BaseModel):
@@ -367,8 +417,12 @@ def worker_analyze(
     worker_request: Request,
 ) -> dict[str, Any]:
     _verify_worker(worker_request)
-    from backend.services.ai_analyzer import analyze_transcript
-    from backend.services.transcriber import Transcript, Word
+    if __package__:
+        from backend.services.ai_analyzer import analyze_transcript
+        from backend.services.transcriber import Transcript, Word
+    else:
+        from services.ai_analyzer import analyze_transcript
+        from services.transcriber import Transcript, Word
 
     words = [
         Word(start=word.start, end=word.end, text=word.text)
@@ -1007,6 +1061,19 @@ def render_selected_clip(
             detail="Le début du Short doit rester dans la durée de la vidéo source.",
         )
 
+    render_options = {
+        field: value
+        for field, value in {
+            "aspect_ratio": request.aspect_ratio,
+            "subtitles": request.subtitles,
+            "subtitle_color": request.subtitle_color,
+            "subtitle_size": request.subtitle_size,
+            "subtitle_position": request.subtitle_position,
+            "subtitle_font": request.subtitle_font,
+        }.items()
+        if value is not None
+    }
+
     if _is_vercel():
         if not isinstance(payload, dict) or not payload.get("source_blob_url"):
             raise HTTPException(status_code=410, detail="La vidéo source n’est plus disponible.")
@@ -1014,7 +1081,12 @@ def render_selected_clip(
         payload["selection_start"] = start_time
         update_task_history(
             task_id,
-            {"status": "queued", "progress": 60, "stage": "En attente du montage"},
+            {
+                "status": "queued",
+                "progress": 60,
+                "stage": "En attente du montage",
+                **render_options,
+            },
         )
         set_task_job_status(task_id, payload, "queued")
         return {"task_id": task_id}
@@ -1042,6 +1114,7 @@ def render_selected_clip(
             stage="Montage FFmpeg",
             selection_start=start_time,
             selection_end=start_time + clip_duration,
+            **render_options,
         )
     metadata["selection_start"] = start_time
     review_path = work_dir / "review.json"
@@ -1049,7 +1122,12 @@ def render_selected_clip(
         review_path.write_text(json.dumps(metadata), encoding="utf-8")
         update_task_history(
             task_id,
-            {"status": "processing", "progress": 65, "stage": "Montage FFmpeg"},
+            {
+                "status": "processing",
+                "progress": 65,
+                "stage": "Montage FFmpeg",
+                **render_options,
+            },
         )
     except OSError as exc:
         with _tasks_lock:
@@ -1211,9 +1289,14 @@ def _run_pipeline(
     stage = "Préparation vidéo"
     keep_for_review = False
     try:
-        from backend.services.ai_analyzer import analyze_transcript
-        from backend.services.downloader import download_video
-        from backend.services.transcriber import transcribe
+        if __package__:
+            from backend.services.ai_analyzer import analyze_transcript
+            from backend.services.downloader import download_video
+            from backend.services.transcriber import transcribe
+        else:
+            from services.ai_analyzer import analyze_transcript
+            from services.downloader import download_video
+            from services.transcriber import transcribe
 
         _update(task_id, status="processing", stage=stage)
         with _tasks_lock:
@@ -1397,10 +1480,16 @@ def _render_selected_clip(
     work_dir = TEMP_DIR / task_id
     stage = "Génération des sous-titres"
     try:
-        from backend.services.ai_analyzer import ClipSelection
-        from backend.services.subtitle_gen import generate_ass
-        from backend.services.transcriber import Transcript, Word
-        from backend.services.video_processor import process_video
+        if __package__:
+            from backend.services.ai_analyzer import ClipSelection
+            from backend.services.subtitle_gen import generate_ass
+            from backend.services.transcriber import Transcript, Word
+            from backend.services.video_processor import process_video
+        else:
+            from services.ai_analyzer import ClipSelection
+            from services.subtitle_gen import generate_ass
+            from services.transcriber import Transcript, Word
+            from services.video_processor import process_video
 
         transcript = Transcript(
             words=[

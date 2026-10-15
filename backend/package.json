@@ -4,5 +4,8 @@
   "type": "module",
   "dependencies": {
     "@vercel/blob": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5"
   }
 }
