@@ -444,19 +444,15 @@ function Header({
   tokens,
   plan,
   screen,
-  hasActiveShort,
   historyCount,
   onNavigate,
-  apiStatus,
 }: {
   user: User
   tokens: number
   plan: 'free' | 'plus'
   screen: MainScreen
-  hasActiveShort: boolean
   historyCount: number
   onNavigate: (screen: MainScreen) => void
-  apiStatus: { groqConfigured: boolean; groqModel: string; paypalConfigured: boolean } | null
 }) {
   const [avatarError, setAvatarError] = useState(false)
   const avatarLetters = (user.displayName || user.email || 'G')
@@ -1194,10 +1190,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         tokens={data.tokens}
         plan={data.plan}
         screen={data.screen}
-        hasActiveShort={Boolean(activeShort)}
         historyCount={data.history.length}
         onNavigate={navigate}
-        apiStatus={apiStatus}
       />
       {storageWarning && (
         <div className="gc-storage-warning" role="status">
@@ -1576,14 +1570,11 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         (activeShort ? (
           <section className="gc-editor">
             <header className="gc-editor-topbar">
-              <Button onClick={() => navigate('create')}>
-                <ArrowLeft size={15} /> Retour
+              <Button aria-label="Retour" onClick={() => navigate('create')}>
+                <ArrowLeft size={16} />
               </Button>
               <div className="gc-editor-name">
                 <strong>{activeShort.title || 'Mon Short'}</strong>
-                <span>
-                  Synchronisé Firestore · Transition : <strong>{activeShort.transition || 'Pop'}</strong>
-                </span>
               </div>
               <TokenPill tokens={data.tokens} />
               <div className="gc-undo-actions">
@@ -1602,8 +1593,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                   <Redo2 size={16} />
                 </Button>
               </div>
-              <Button variant="primary" onClick={downloadShortDetails}>
-                <Download size={15} /> Exporter
+              <Button variant="primary" aria-label="Exporter" onClick={downloadShortDetails}>
+                <Download size={16} />
               </Button>
             </header>
 
@@ -1614,29 +1605,29 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                     key={name}
                     type="button"
                     className={editorTool === name ? 'active' : ''}
+                    title={name}
+                    aria-label={name}
                     onClick={() => {
                       setEditorTool(name)
                       if (name === 'Historique') navigate('history')
                     }}
                   >
-                    <Icon size={17} strokeWidth={2} />
-                    <span>{name}</span>
+                    <Icon size={20} strokeWidth={2} />
                   </button>
                 ))}
               </nav>
 
               <section className="gc-editor-canvas">
                 <div className="gc-canvas-toolbar">
-                  <span>
-                    Aperçu interactif <Chip>9:16</Chip>
-                  </span>
+                  <Chip>9:16</Chip>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <Button
                       variant="primary"
+                      aria-label="Tester transition"
                       onClick={() => triggerTransition()}
-                      style={{ padding: '0 10px', minHeight: 30, fontSize: '10px' }}
+                      style={{ padding: '0 8px', minHeight: 30 }}
                     >
-                      <Sparkles size={13} /> Tester transition
+                      <Sparkles size={16} />
                     </Button>
                   </div>
                 </div>
@@ -1685,10 +1676,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 {editorTool === 'Transitions' ? (
                   <>
                     <div className="gc-panel-heading">
-                      <div>
-                        <span>BIBLIOTHÈQUE D'ANIMATIONS</span>
-                        <h2>Transitions de texte</h2>
-                      </div>
+                      <h2>{editorTool}</h2>
                     </div>
 
                     <p style={{ margin: '0 0 10px', fontSize: '11px', color: 'var(--gc-secondary)', lineHeight: 1.45 }}>
