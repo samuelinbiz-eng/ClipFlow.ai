@@ -34,6 +34,7 @@ export type ShortRecord = {
   credit_cost: number
   created_at: string
   updated_at: string
+  owner_uid?: string
 }
 
 function cleanRecord(record: Partial<ShortRecord>): Record<string, unknown> {

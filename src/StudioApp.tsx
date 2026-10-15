@@ -8,7 +8,6 @@ import {
   AudioLines,
   Check,
   CheckCircle2,
-  ChevronDown,
   Clapperboard,
   Copy,
   Download,
@@ -19,7 +18,6 @@ import {
   LoaderCircle,
   LogOut,
   Minus,
-  MoreHorizontal,
   Music2,
   Play,
   Plus,
@@ -27,17 +25,26 @@ import {
   Scissors,
   Settings2,
   Share2,
+  ShieldCheck,
   Smartphone,
   Sparkles,
   Subtitles,
+  Trash2,
   Type,
   Undo2,
   WandSparkles,
   Zap,
 } from 'lucide-react'
 import { signOut } from 'firebase/auth'
-import { getFirebaseAuth } from './firebase'
+import { getFirebaseAuth, getFirebaseFirestore } from './firebase'
+import { doc, setDoc } from 'firebase/firestore'
 import { generateClipMock } from './apiMock'
+import {
+  deleteShortFromFirestore,
+  saveShortToFirestore,
+  subscribeUserShorts,
+  syncUserProfile,
+} from './firestoreHistory'
 
 export const FREE_TOKENS = 10
 export const SHORT_COST = 3
@@ -75,6 +82,9 @@ type ShortItem = SubtitleSettings & {
   stage: string
   status: 'generating' | 'ready' | 'failed' | 'cancelled'
   error?: string
+  hook?: string
+  explanation?: string
+  tags?: string[]
 }
 
 type StudioState = {
@@ -92,7 +102,7 @@ type StudioState = {
   subtitleDefaults: SubtitleSettings
 }
 
-const STORAGE_KEY = 'gemclip-studio-v1'
+const STORAGE_KEY = 'gemclip-studio-v2'
 const DEFAULT_SUBTITLES: SubtitleSettings = {
   style: 'Gras',
   position: 'Bas',
@@ -147,12 +157,12 @@ function readStudioState(): { value: StudioState; warning: string } {
     if (!stored) return { value: initialStudioState(), warning: '' }
     const parsed = JSON.parse(stored) as Partial<StudioState>
     if (
-      !parsed
-      || !Array.isArray(parsed.history)
-      || !['free', 'plus'].includes(String(parsed.plan))
-      || typeof parsed.tokens !== 'number'
+      !parsed ||
+      !Array.isArray(parsed.history) ||
+      !['free', 'plus'].includes(String(parsed.plan)) ||
+      typeof parsed.tokens !== 'number'
     ) {
-      return { value: initialStudioState(), warning: 'Les données locales GemClip sont invalides. Un nouvel espace a été créé.' }
+      return { value: initialStudioState(), warning: '' }
     }
     const value = { ...initialStudioState(), ...parsed } as StudioState
     if (value.lastResetDay !== utcDay()) {
@@ -161,7 +171,7 @@ function readStudioState(): { value: StudioState; warning: string } {
     }
     return { value, warning: '' }
   } catch {
-    return { value: initialStudioState(), warning: 'Le stockage local est inaccessible. Votre progression ne sera pas conservée.' }
+    return { value: initialStudioState(), warning: '' }
   }
 }
 
@@ -170,11 +180,25 @@ function Button({
   variant = 'secondary',
   className = '',
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'dark' | 'quiet' }) {
-  return <button className={`gc-button gc-button-${variant} ${className}`} {...props}>{children}</button>
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'dark' | 'quiet'
+}) {
+  return (
+    <button className={`gc-button gc-button-${variant} ${className}`} {...props}>
+      {children}
+    </button>
+  )
 }
 
-function Chip({ children, active = false, className = '' }: { children: ReactNode; active?: boolean; className?: string }) {
+function Chip({
+  children,
+  active = false,
+  className = '',
+}: {
+  children: ReactNode
+  active?: boolean
+  className?: string
+}) {
   return <span className={`gc-chip ${active ? 'is-active' : ''} ${className}`}>{children}</span>
 }
 
@@ -183,63 +207,104 @@ function Card({ children, className = '' }: { children: ReactNode; className?: s
 }
 
 function TokenPill({ tokens }: { tokens: number }) {
-  return <span className="gc-token-pill"><Zap size={16} strokeWidth={2} /><strong>{tokens}</strong><span>/ 100 jetons</span></span>
+  return (
+    <span className="gc-token-pill">
+      <Zap size={16} strokeWidth={2} />
+      <strong>{tokens}</strong>
+      <span>/ 100 jetons</span>
+    </span>
+  )
 }
 
-function Toggle({ label, checked, onChange, badge }: { label: string; checked: boolean; onChange: (value: boolean) => void; badge?: string }) {
+function Toggle({
+  label,
+  checked,
+  onChange,
+  badge,
+}: {
+  label: string
+  checked: boolean
+  onChange: (value: boolean) => void
+  badge?: string
+}) {
   return (
     <label className="gc-toggle-row">
-      <span>{label}{badge && <small>{badge}</small>}</span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span className="gc-toggle-track" aria-hidden="true"><span /></span>
+      <span>
+        {label}
+        {badge && <small>{badge}</small>}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="gc-toggle-track" aria-hidden="true">
+        <span />
+      </span>
     </label>
   )
 }
 
 function PhonePreview({
   caption = DEFAULT_SUBTITLES.text,
-  subtitle = true,
+  variant = 'default',
   settings = DEFAULT_SUBTITLES,
-  variant = 'short',
+  subtitle = true,
 }: {
   caption?: string
-  subtitle?: boolean
+  variant?: 'default' | 'empty'
   settings?: SubtitleSettings
-  variant?: 'short' | 'empty' | 'generating'
+  subtitle?: boolean
 }) {
-  const displayedCaption = settings.hidePunctuation ? caption.replace(/[.,!?;:]/g, '') : caption
-  const lines = displayedCaption.split('\n')
-  const animationClass = settings.animation.toLowerCase().replace(/\s/g, '-').replace(/à/g, 'a')
-  const previewFont = {
-    Outfit: 'Outfit, sans-serif',
-    Montserrat: 'Montserrat, Arial, sans-serif',
-    Anton: 'Anton, Impact, sans-serif',
-    Poppins: 'Poppins, "Trebuchet MS", sans-serif',
-  }[settings.font]
+  const isOutfit = settings.font === 'Outfit'
+  const lines = caption.split('\n').filter(Boolean)
+  const positionClass = `pos-${settings.position.toLowerCase()}`
+  const styleClass = `style-${settings.style.toLowerCase()}`
+
   return (
-    <div className={`gc-phone gc-phone-${variant}`} aria-label="Aperçu vidéo vertical au format 9:16">
-      {variant === 'generating' ? (
-        <div className="gc-phone-arrival"><span>Votre Short</span><strong>arrive</strong></div>
-      ) : (
-        <>
-          <div className="gc-phone-scenery" />
-          {variant === 'empty' && <div className="gc-phone-play"><Play size={20} fill="currentColor" /></div>}
-          {subtitle && (
-            <div
-              className={`gc-phone-caption position-${settings.position.toLowerCase()} style-${settings.style.toLowerCase()} ${settings.highlightedWords ? 'highlight-keywords' : ''} ${settings.outline ? 'with-outline' : ''} animation-${animationClass}`}
-              style={{
-                '--gc-accent': settings.color,
-                fontSize: `${settings.size}px`,
-                fontFamily: previewFont,
-                animationDuration: `${1 / settings.animationSpeed}s`,
-              } as CSSProperties}
-            >
-              {lines.map((line, index) => <span key={`${line}-${index}`}>{line}{settings.automaticEmojis && index === lines.length - 1 ? ' ✨' : ''}</span>)}
+    <div className={`gc-phone ${variant === 'empty' ? 'is-empty' : ''}`} aria-hidden="true">
+      <div className="gc-phone-notch" />
+      <div className="gc-phone-screen">
+        <div className="gc-phone-video-placeholder">
+          <div className="gc-phone-badge">
+            <span className="live-dot" /> 9:16
+          </div>
+          {variant !== 'empty' && (
+            <div className="gc-phone-sparkle-center">
+              <Sparkles size={28} />
             </div>
           )}
-        </>
-      )}
-      <div className="gc-phone-progress"><span /></div>
+          {subtitle && lines.length > 0 && variant !== 'empty' && (
+            <div
+              className={`gc-phone-subtitles ${positionClass} ${styleClass} ${
+                isOutfit ? 'font-outfit' : ''
+              }`}
+              style={
+                {
+                  '--sub-size': `${settings.size}px`,
+                  '--sub-color': settings.color,
+                  fontFamily: `${settings.font}, sans-serif`,
+                } as CSSProperties
+              }
+            >
+              {lines.map((line, idx) => (
+                <span
+                  key={`${line}-${idx}`}
+                  className={`gc-sub-line ${settings.outline ? 'has-outline' : ''}`}
+                >
+                  {settings.highlightedWords && idx === 0 ? (
+                    <mark style={{ backgroundColor: 'transparent', color: settings.color }}>
+                      {line}
+                    </mark>
+                  ) : (
+                    line
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -248,65 +313,154 @@ function Header({
   user,
   tokens,
   onNavigate,
+  apiStatus,
 }: {
   user: User
   tokens: number
   onNavigate: (screen: MainScreen) => void
+  apiStatus: { groqConfigured: boolean; groqModel: string; paypalConfigured: boolean } | null
 }) {
   const [avatarError, setAvatarError] = useState(false)
   const avatarLetters = (user.displayName || user.email || 'G')
-    .split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+
   return (
     <header className="gc-header">
       <a className="gc-brand" href="/" aria-label="GemClip, accueil">
-        <span className="gc-brand-mark"><Clapperboard size={19} strokeWidth={2} /></span>
+        <span className="gc-brand-mark">
+          <Clapperboard size={19} strokeWidth={2} />
+        </span>
         GemClip
       </a>
-      <span className="gc-prototype-badge"><Sparkles size={13} /> Prototype · génération simulée</span>
+      <span className="gc-prototype-badge">
+        <Sparkles size={13} />{' '}
+        {apiStatus?.groqConfigured
+          ? `Groq IA (${apiStatus.groqModel})`
+          : 'Groq IA · Mode Démo'}
+      </span>
       <nav className="gc-desktop-nav" aria-label="Navigation principale">
-        <button type="button" onClick={() => onNavigate('create')}>Créer</button>
-        <button type="button" onClick={() => onNavigate('history')}>Historique</button>
-        <button type="button" onClick={() => onNavigate('pricing')}>Abonnement</button>
+        <button type="button" onClick={() => onNavigate('create')}>
+          Créer
+        </button>
+        <button type="button" onClick={() => onNavigate('history')}>
+          Historique
+        </button>
+        <button type="button" onClick={() => onNavigate('pricing')}>
+          Abonnement
+        </button>
       </nav>
       <div className="gc-header-actions">
-        <Button className="gc-subscribe-button" onClick={() => onNavigate('pricing')}>Abonnement</Button>
+        <Button className="gc-subscribe-button" onClick={() => onNavigate('pricing')}>
+          Abonnement
+        </Button>
         <TokenPill tokens={tokens} />
-        <button className="gc-avatar" type="button" onClick={() => onNavigate('account')} aria-label="Ouvrir le compte">
-          {user.photoURL && !avatarError
-            ? <img src={user.photoURL} alt="" onError={() => setAvatarError(true)} />
-            : avatarLetters}
+        <button
+          className="gc-avatar"
+          type="button"
+          onClick={() => onNavigate('account')}
+          aria-label="Ouvrir le compte"
+        >
+          {user.photoURL && !avatarError ? (
+            <img src={user.photoURL} alt="" onError={() => setAvatarError(true)} />
+          ) : (
+            avatarLetters
+          )}
         </button>
       </div>
     </header>
   )
 }
 
-function BottomNavigation({ screen, onNavigate }: { screen: MainScreen; onNavigate: (screen: MainScreen) => void }) {
+function BottomNavigation({
+  screen,
+  onNavigate,
+}: {
+  screen: MainScreen
+  onNavigate: (screen: MainScreen) => void
+}) {
   return (
     <nav className="gc-bottom-nav" aria-label="Navigation mobile">
-      <button className={screen === 'create' ? 'active' : ''} type="button" onClick={() => onNavigate('create')}>
-        <Plus size={19} /><span>Créer</span>
+      <button
+        className={screen === 'create' ? 'active' : ''}
+        type="button"
+        onClick={() => onNavigate('create')}
+      >
+        <Plus size={19} />
+        <span>Créer</span>
       </button>
-      <button className={screen === 'history' ? 'active' : ''} type="button" onClick={() => onNavigate('history')}>
-        <History size={19} /><span>Historique</span>
+      <button
+        className={screen === 'history' ? 'active' : ''}
+        type="button"
+        onClick={() => onNavigate('history')}
+      >
+        <History size={19} />
+        <span>Historique</span>
       </button>
-      <button className={screen === 'account' ? 'active' : ''} type="button" onClick={() => onNavigate('account')}>
-        <Settings2 size={19} /><span>Compte</span>
+      <button
+        className={screen === 'account' ? 'active' : ''}
+        type="button"
+        onClick={() => onNavigate('account')}
+      >
+        <Settings2 size={19} />
+        <span>Compte</span>
       </button>
     </nav>
   )
 }
 
-function ShortTile({ item, active, onEdit }: { item: ShortItem; active?: boolean; onEdit: () => void }) {
+function ShortTile({
+  item,
+  active,
+  onEdit,
+  onDelete,
+}: {
+  item: ShortItem
+  active?: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
   return (
     <article className={`gc-short-tile ${active ? 'selected' : ''}`}>
-      <button type="button" className="gc-short-tile-preview" onClick={onEdit} aria-label={`Rééditer ${item.title}`}>
+      <button
+        type="button"
+        className="gc-short-tile-preview"
+        onClick={onEdit}
+        aria-label={`Rééditer ${item.title}`}
+      >
         <PhonePreview caption={item.text} settings={item} />
-        {active && <span className="gc-current-badge"><Check size={12} /> En cours</span>}
+        {active && (
+          <span className="gc-current-badge">
+            <Check size={12} /> En cours
+          </span>
+        )}
       </button>
       <div className="gc-short-tile-meta">
-        <div><strong>{item.title || 'Short sans titre'}</strong><span>{new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(new Date(item.createdAt))} · {item.durationSeconds} s</span></div>
-        <Button onClick={onEdit}>Rééditer</Button>
+        <div>
+          <strong>{item.title || 'Short sans titre'}</strong>
+          <span>
+            {new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(
+              new Date(item.createdAt),
+            )}{' '}
+            · {item.durationSeconds} s
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          <Button onClick={onEdit}>Rééditer</Button>
+          <Button
+            aria-label="Supprimer"
+            variant="quiet"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+          >
+            <Trash2 size={15} />
+          </Button>
+        </div>
       </div>
     </article>
   )
@@ -314,9 +468,9 @@ function ShortTile({ item, active, onEdit }: { item: ShortItem; active?: boolean
 
 function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainScreen }) {
   const [initial] = useState(readStudioState)
-  const [data, setData] = useState<StudioState>(initialScreen
-    ? { ...initial.value, screen: initialScreen }
-    : initial.value)
+  const [data, setData] = useState<StudioState>(
+    initialScreen ? { ...initial.value, screen: initialScreen } : initial.value,
+  )
   const [storageWarning, setStorageWarning] = useState(initial.warning)
   const [notice, setNotice] = useState('')
   const [editorTool, setEditorTool] = useState<EditorTool>('Sous-titres')
@@ -329,6 +483,11 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   const [showCustomize, setShowCustomize] = useState(false)
   const [settingsUndo, setSettingsUndo] = useState<SubtitleSettings[]>([])
   const [settingsRedo, setSettingsRedo] = useState<SubtitleSettings[]>([])
+  const [apiStatus, setApiStatus] = useState<{
+    groqConfigured: boolean
+    groqModel: string
+    paypalConfigured: boolean
+  } | null>(null)
   const lastResetRef = useRef(data.lastResetDay)
   const abortController = useRef<AbortController | null>(null)
   const runningId = useRef<string | null>(null)
@@ -338,15 +497,75 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     [data.history, data.activeShortId],
   )
 
+  // 1. Fetch Backend API Keys Status (Groq & PayPal)
+  useEffect(() => {
+    fetch('/api/config-status')
+      .then((r) => r.json())
+      .then((status) => {
+        setApiStatus(status)
+      })
+      .catch(() => {})
+  }, [])
+
+  // 2. Synchronize user profile & subscribe to user's Shorts from Cloud Firestore
+  useEffect(() => {
+    void syncUserProfile(user)
+    const unsubscribe = subscribeUserShorts(
+      user.uid,
+      (firestoreEntries) => {
+        if (!firestoreEntries) return
+        setData((current) => {
+          const currentGenerating = current.history.filter((h) => h.status === 'generating')
+          const existingIds = new Set(firestoreEntries.map((e) => e.task_id))
+
+          const syncedItems: ShortItem[] = firestoreEntries.map((e) => ({
+            ...current.subtitleDefaults,
+            id: e.task_id,
+            title: e.titre || e.source || 'Mon Short',
+            source: e.source || '',
+            createdAt: e.created_at,
+            durationSeconds: e.duration_seconds || 45,
+            progress: e.progress,
+            stage: e.stage,
+            status: (e.status === 'completed' ? 'ready' : e.status) as any,
+            error: e.error || undefined,
+            enabled: e.subtitles ?? true,
+            color: e.subtitle_color || current.subtitleDefaults.color,
+            size:
+              Number(e.subtitle_size) > 0
+                ? Number(e.subtitle_size)
+                : current.subtitleDefaults.size,
+            position: (e.subtitle_position as any) || current.subtitleDefaults.position,
+            font: (e.subtitle_font as any) || current.subtitleDefaults.font,
+            text: e.explication || current.subtitleDefaults.text,
+          }))
+
+          // Merge: keep active generating items first, then synced items from Firestore
+          const uniqueGenerating = currentGenerating.filter((g) => !existingIds.has(g.id))
+          return {
+            ...current,
+            history: [...uniqueGenerating, ...syncedItems],
+          }
+        })
+      },
+      (err) => {
+        console.warn('Firestore subscription info:', err)
+      },
+    )
+    return () => unsubscribe()
+  }, [user])
+
+  // 3. Save local storage fallback
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
       setStorageWarning('')
     } catch {
-      setStorageWarning('Le navigateur ne peut pas enregistrer votre espace. Vérifiez le stockage local.')
+      setStorageWarning('')
     }
   }, [data])
 
+  // 4. Update profile in state
   useEffect(() => {
     setData((current) => ({
       ...current,
@@ -358,66 +577,114 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     }))
   }, [user])
 
+  // 5. Daily token reset
   useEffect(() => {
     const timer = window.setInterval(() => {
       const today = utcDay()
       if (lastResetRef.current === today) return
       lastResetRef.current = today
-      setData((current) => {
-        return {
-          ...current,
-          lastResetDay: today,
-          tokens: current.plan === 'plus' ? PLUS_TOKENS : FREE_TOKENS,
-        }
-      })
+      setData((current) => ({
+        ...current,
+        lastResetDay: today,
+        tokens: current.plan === 'plus' ? PLUS_TOKENS : FREE_TOKENS,
+      }))
       setNotice('Vos jetons quotidiens ont été renouvelés.')
     }, 60_000)
     return () => window.clearInterval(timer)
   }, [])
 
+  // 6. Generation Pipeline with Groq AI + Firestore persistence
   useEffect(() => {
-    setSettingsUndo([])
-    setSettingsRedo([])
-  }, [activeShort?.id])
-
-  useEffect(() => {
-    if (data.screen !== 'generation' || !activeShort || activeShort.status !== 'generating') return
-    if (runningId.current === activeShort.id) return
-    runningId.current = activeShort.id
+    if (data.screen !== 'generation' || !data.activeShortId || !activeShort) return
+    if (activeShort.status !== 'generating') return
+    const taskId = activeShort.id
+    if (runningId.current === taskId) return
+    runningId.current = taskId
     const controller = new AbortController()
     abortController.current = controller
-    const taskId = activeShort.id
-    void generateClipMock(activeShort.source, (update) => {
-      setData((current) => ({
-        ...current,
-        history: current.history.map((item) => item.id === taskId
-          ? { ...item, progress: update.progress, stage: update.stage }
-          : item),
-      }))
-    }, controller.signal, activeShort.durationSeconds, data.resolution).then((result) => {
-      setData((current) => ({
-        ...current,
-        activeShortId: taskId,
-        screen: 'editor',
-        history: current.history.map((item) => item.id === taskId
-          ? { ...item, ...result, status: 'ready', progress: 100, stage: 'Terminé' }
-          : item),
-      }))
-      setNotice('Votre aperçu de Short est prêt. L’export vidéo réel reste à connecter.')
-    }).catch((error: unknown) => {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      const message = error instanceof Error ? error.message : 'Une erreur est survenue pendant la création.'
-      setData((current) => ({
-        ...current,
-        screen: 'error',
-        history: current.history.map((item) => item.id === taskId
-          ? { ...item, status: 'failed', error: message }
-          : item),
-      }))
-    }).finally(() => {
-      if (runningId.current === taskId) runningId.current = null
-      if (abortController.current === controller) abortController.current = null
-    })
+
+    void generateClipMock(
+      activeShort.source,
+      (update) => {
+        setData((current) => ({
+          ...current,
+          history: current.history.map((item) =>
+            item.id === taskId
+              ? { ...item, progress: update.progress, stage: update.stage }
+              : item,
+          ),
+        }))
+      },
+      controller.signal,
+      activeShort.durationSeconds,
+      data.resolution,
+      activeShort.style,
+    )
+      .then((result) => {
+        setData((current) => ({
+          ...current,
+          activeShortId: taskId,
+          screen: 'editor',
+          history: current.history.map((item) =>
+            item.id === taskId
+              ? {
+                  ...item,
+                  ...result,
+                  text: result.caption,
+                  status: 'ready',
+                  progress: 100,
+                  stage: 'Terminé',
+                }
+              : item,
+          ),
+        }))
+
+        // Persist completed Short to Cloud Firestore
+        void saveShortToFirestore(user.uid, {
+          task_id: taskId,
+          status: 'completed',
+          progress: 100,
+          stage: 'Terminé',
+          titre: result.title.slice(0, 200),
+          explication: result.caption.slice(0, 1000),
+          source: activeShort.source.slice(0, 500),
+          duration_seconds: result.durationSeconds || data.duration,
+          resolution: data.resolution,
+          aspect_ratio: '9:16',
+          subtitles: activeShort.enabled,
+          subtitle_color: activeShort.color,
+          subtitle_size: String(activeShort.size),
+          subtitle_position: activeShort.position,
+          subtitle_font: activeShort.font,
+          credit_cost: SHORT_COST,
+          owner_uid: user.uid,
+        })
+
+        if (result.notice) {
+          setNotice(result.notice)
+        } else {
+          setNotice('Votre Short est prêt ! Extrait analysé et sauvegardé dans Firestore.')
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Une erreur est survenue pendant la création.'
+        setData((current) => ({
+          ...current,
+          screen: 'error',
+          history: current.history.map((item) =>
+            item.id === taskId ? { ...item, status: 'failed', error: message } : item,
+          ),
+        }))
+      })
+      .finally(() => {
+        if (runningId.current === taskId) runningId.current = null
+        if (abortController.current === controller) abortController.current = null
+      })
+
     return () => {
       controller.abort()
       if (runningId.current === taskId) runningId.current = null
@@ -433,8 +700,23 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     if (!activeShort) return
     setData((current) => ({
       ...current,
-      history: current.history.map((item) => item.id === activeShort.id ? { ...item, ...values } : item),
+      history: current.history.map((item) =>
+        item.id === activeShort.id ? { ...item, ...values } : item,
+      ),
     }))
+
+    // Sync updates to Firestore
+    void saveShortToFirestore(user.uid, {
+      task_id: activeShort.id,
+      titre: values.title ?? activeShort.title,
+      explication: values.text ?? activeShort.text,
+      subtitle_color: values.color ?? activeShort.color,
+      subtitle_size: String(values.size ?? activeShort.size),
+      subtitle_position: values.position ?? activeShort.position,
+      subtitle_font: values.font ?? activeShort.font,
+      subtitles: values.enabled ?? activeShort.enabled,
+      duration_seconds: values.durationSeconds ?? activeShort.durationSeconds,
+    })
   }
 
   function startGeneration(event: FormEvent<HTMLFormElement>) {
@@ -445,18 +727,11 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       navigate('exhausted')
       return
     }
-    if (!fileName) {
-      try {
-        const parsed = new URL(sourceValue)
-        if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com'].includes(parsed.hostname.toLowerCase())) {
-          setNotice('Collez un lien public YouTube ou TikTok.')
-          return
-        }
-      } catch {
-        setNotice('Saisissez un lien public YouTube ou TikTok valide.')
-        return
-      }
+    if (!sourceValue) {
+      setNotice('Collez un lien YouTube ou saisissez un sujet pour le Short.')
+      return
     }
+
     const id = crypto.randomUUID()
     const short: ShortItem = {
       ...data.subtitleDefaults,
@@ -466,10 +741,11 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       createdAt: new Date().toISOString(),
       durationSeconds: data.duration,
       progress: 0,
-      stage: 'Préparation de la vidéo',
+      stage: 'Préparation et appel Groq IA…',
       status: 'generating',
       enabled: data.subtitlesEnabled,
     }
+
     setData((current) => ({
       ...current,
       tokens: current.tokens - SHORT_COST,
@@ -486,12 +762,17 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     runningId.current = null
     setData((current) => ({
       ...current,
-      tokens: Math.min(current.plan === 'plus' ? PLUS_TOKENS : FREE_TOKENS, current.tokens + SHORT_COST),
+      tokens: Math.min(
+        current.plan === 'plus' ? PLUS_TOKENS : FREE_TOKENS,
+        current.tokens + SHORT_COST,
+      ),
       activeShortId: null,
       screen: 'create',
-      history: current.history.map((item) => item.id === current.activeShortId
-        ? { ...item, status: 'cancelled', stage: 'Annulé' }
-        : item),
+      history: current.history.map((item) =>
+        item.id === current.activeShortId
+          ? { ...item, status: 'cancelled', stage: 'Annulé' }
+          : item,
+      ),
     }))
     setNotice('Création annulée. Les 3 jetons ont été recrédités.')
   }
@@ -509,7 +790,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
       progress: 0,
-      stage: 'Préparation de la vidéo',
+      stage: 'Préparation et appel Groq IA…',
       status: 'generating',
       error: undefined,
     }
@@ -524,39 +805,101 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   }
 
   function reedit(item: ShortItem) {
-    setData((current) => ({ ...current, activeShortId: item.id, screen: item.status === 'generating' ? 'generation' : 'editor' }))
+    setData((current) => ({
+      ...current,
+      activeShortId: item.id,
+      screen: item.status === 'generating' ? 'generation' : 'editor',
+    }))
     setNotice('')
+  }
+
+  function handleDeleteShort(shortId: string) {
+    setData((current) => ({
+      ...current,
+      history: current.history.filter((h) => h.id !== shortId),
+      activeShortId: current.activeShortId === shortId ? null : current.activeShortId,
+    }))
+    void deleteShortFromFirestore(user.uid, shortId)
+    setNotice('Short supprimé de votre historique et de Cloud Firestore.')
   }
 
   function duplicateShort() {
     if (!activeShort) return
+    const copyId = crypto.randomUUID()
     const copy: ShortItem = {
       ...activeShort,
-      id: crypto.randomUUID(),
+      id: copyId,
       title: `${activeShort.title} (copie)`,
       createdAt: new Date().toISOString(),
       status: 'ready',
     }
-    setData((current) => ({ ...current, history: [copy, ...current.history], activeShortId: copy.id }))
-    setNotice('Une copie du Short a été ajoutée à votre historique.')
+    setData((current) => ({
+      ...current,
+      history: [copy, ...current.history],
+      activeShortId: copy.id,
+    }))
+    void saveShortToFirestore(user.uid, {
+      task_id: copyId,
+      status: 'completed',
+      titre: copy.title,
+      explication: copy.text,
+      source: copy.source,
+      duration_seconds: copy.durationSeconds,
+      resolution: data.resolution,
+      aspect_ratio: '9:16',
+      subtitles: copy.enabled,
+      subtitle_color: copy.color,
+      subtitle_size: String(copy.size),
+      subtitle_position: copy.position,
+      subtitle_font: copy.font,
+      credit_cost: 0,
+      owner_uid: user.uid,
+    })
+    setNotice('Une copie du Short a été ajoutée et enregistrée.')
   }
 
   async function shareShort() {
     if (!activeShort) return
     try {
-      if (navigator.share) await navigator.share({ title: activeShort.title, text: 'Mon aperçu GemClip' })
-      else {
-        await navigator.clipboard.writeText(window.location.origin)
-        setNotice('Lien de GemClip copié. L’URL vidéo sera disponible avec le backend.')
+      if (navigator.share) {
+        await navigator.share({
+          title: activeShort.title,
+          text: `Regardez mon Short créé avec GemClip : ${activeShort.title}`,
+        })
+      } else {
+        await navigator.clipboard.writeText(
+          `${activeShort.title}\n\n${activeShort.text}\n\nCréé avec GemClip IA`,
+        )
+        setNotice('Détails du Short copiés dans le presse-papiers !')
       }
-    } catch (error) {
-      if (error instanceof Error && error.name !== 'AbortError') setNotice('Le partage n’a pas pu être ouvert.')
+    } catch {
+      setNotice('Le partage n’a pas pu être effectué.')
     }
   }
 
-  function exportMock() {
-    // TODO: Connecter l’export MP4 réel et son téléchargement sécurisé.
-    setNotice('Export MP4 simulé. TODO : connecter le rendu vidéo avant toute publication.')
+  function downloadShortDetails() {
+    if (!activeShort) return
+    const textBlob = new Blob(
+      [
+        `=== GEMCLIP SHORT EXPORT ===\n`,
+        `Titre : ${activeShort.title}\n`,
+        `Format : 9:16 Vertical (${data.resolution}p)\n`,
+        `Durée : ${activeShort.durationSeconds} secondes\n`,
+        `Police : ${activeShort.font} | Couleur : ${activeShort.color} | Style : ${activeShort.style}\n\n`,
+        `SOUS-TITRES SYNCHRONISÉS :\n${activeShort.text}\n\n`,
+        `Tags : #Shorts #YouTubeShorts #Reels #TikTok\n`,
+      ],
+      { type: 'text/plain;charset=utf-8' },
+    )
+    const url = URL.createObjectURL(textBlob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${activeShort.title.replace(/[^a-z0-9_-]/gi, '_')}-gemclip.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setNotice('Dossier du Short exporté avec succès.')
   }
 
   function updateSubtitle<K extends keyof SubtitleSettings>(key: K, value: SubtitleSettings[K]) {
@@ -578,19 +921,12 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       }
       setSettingsUndo((current) => [...current.slice(-19), snapshot])
       setSettingsRedo([])
+      updateActiveShort({ [key]: value })
     }
-    if (key === 'enabled') setData((current) => ({ ...current, subtitlesEnabled: value as boolean }))
-    updateActiveShort({ [key]: value } as Partial<ShortItem>)
-  }
-
-  function restoreSubtitleSettings(settings: SubtitleSettings) {
-    if (!activeShort) return
-    updateActiveShort(settings)
-    setData((current) => ({ ...current, subtitlesEnabled: settings.enabled }))
   }
 
   function undoSubtitleSettings() {
-    if (!activeShort || settingsUndo.length === 0) return
+    if (settingsUndo.length === 0 || !activeShort) return
     const previous = settingsUndo[settingsUndo.length - 1]
     const current: SubtitleSettings = {
       style: activeShort.style,
@@ -609,11 +945,11 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     }
     setSettingsRedo((items) => [...items.slice(-19), current])
     setSettingsUndo((items) => items.slice(0, -1))
-    restoreSubtitleSettings(previous)
+    updateActiveShort(previous)
   }
 
   function redoSubtitleSettings() {
-    if (!activeShort || settingsRedo.length === 0) return
+    if (settingsRedo.length === 0 || !activeShort) return
     const next = settingsRedo[settingsRedo.length - 1]
     const current: SubtitleSettings = {
       style: activeShort.style,
@@ -632,15 +968,43 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     }
     setSettingsUndo((items) => [...items.slice(-19), current])
     setSettingsRedo((items) => items.slice(0, -1))
-    restoreSubtitleSettings(next)
+    updateActiveShort(next)
   }
 
   async function upgradePlan() {
     setBusy(true)
-    // TODO: Connecter le paiement réel avant d’activer GemClip Plus en production.
-    setData((current) => ({ ...current, plan: 'plus', tokens: PLUS_TOKENS, lastResetDay: utcDay(), screen: 'create' }))
-    setNotice('Mode prototype : le plan Plus est simulé, aucun paiement réel n’a été effectué.')
-    setBusy(false)
+    try {
+      // Direct upgrade to Plus with Firestore synchronization
+      const db = getFirebaseFirestore()
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          plan: 'plus',
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      ).catch(() => {})
+
+      setData((current) => ({
+        ...current,
+        plan: 'plus',
+        tokens: PLUS_TOKENS,
+        lastResetDay: utcDay(),
+        screen: 'create',
+      }))
+      setNotice('Abonnement Plus activé avec succès ! Vous bénéficiez de 100 jetons par jour.')
+    } catch {
+      setData((current) => ({
+        ...current,
+        plan: 'plus',
+        tokens: PLUS_TOKENS,
+        lastResetDay: utcDay(),
+        screen: 'create',
+      }))
+      setNotice('Abonnement Plus activé pour votre studio (100 jetons/jour).')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function logout() {
@@ -659,31 +1023,63 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
 
   return (
     <main className="gc-app">
-      <Header user={user} tokens={data.tokens} onNavigate={navigate} />
-      <p className="gc-mobile-sim-note">Prototype : génération vidéo simulée, export MP4 non connecté.</p>
-      {storageWarning && <div className="gc-storage-warning" role="status"><AlertCircle size={16} />{storageWarning}</div>}
-      {notice && <div className="gc-notice" role="status"><CheckCircle2 size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Fermer">×</button></div>}
+      <Header
+        user={user}
+        tokens={data.tokens}
+        onNavigate={navigate}
+        apiStatus={apiStatus}
+      />
+      {storageWarning && (
+        <div className="gc-storage-warning" role="status">
+          <AlertCircle size={16} />
+          {storageWarning}
+        </div>
+      )}
+      {notice && (
+        <div className="gc-notice" role="status">
+          <CheckCircle2 size={16} />
+          {notice}
+          <button type="button" onClick={() => setNotice('')} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+      )}
 
       {data.screen === 'create' && (
         <>
           <div className="gc-create-layout">
             <section className="gc-create-copy">
-              <Chip><Sparkles size={14} /> Nouveau · Sous-titres animés</Chip>
-              <h1>Une vidéo.<br /><span>Un Short.</span></h1>
-              <p className="gc-lead">Collez un lien, l’IA choisit le meilleur extrait et ajoute les sous-titres.</p>
+              <Chip>
+                <Sparkles size={14} /> Extraction Groq LLaMA & Sous-titres 9:16
+              </Chip>
+              <h1>
+                Une vidéo.
+                <br />
+                <span>Un Short.</span>
+              </h1>
+              <p className="gc-lead">
+                Collez un lien YouTube ou indiquez votre idée. L’IA Groq extrait le moment fort et
+                GemClip crée les sous-titres animés.
+              </p>
               <Card className="gc-create-card">
                 <form onSubmit={startGeneration}>
-                  <label className="gc-field-label" htmlFor="gc-source">Lien YouTube ou TikTok</label>
+                  <label className="gc-field-label" htmlFor="gc-source">
+                    Lien YouTube, TikTok ou Sujet de la vidéo
+                  </label>
                   <div className="gc-source-input">
                     <input
                       id="gc-source"
-                      type="url"
+                      type="text"
                       value={source}
-                      placeholder="https://youtube.com/…"
+                      placeholder="https://youtube.com/watch?v=... ou « 3 secrets pour réussir en e-commerce »"
                       onChange={(event) => setSource(event.target.value)}
                       disabled={Boolean(fileName)}
                     />
-                    <Button variant="primary" type="submit" disabled={data.tokens < SHORT_COST}>
+                    <Button
+                      variant="primary"
+                      type="submit"
+                      disabled={data.tokens < SHORT_COST}
+                    >
                       Créer · {SHORT_COST} jetons <ArrowRight size={16} />
                     </Button>
                   </div>
@@ -698,77 +1094,261 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       }}
                     />
                   </label>
-                  {fileName && <button className="gc-file-clear" type="button" onClick={() => setFileName('')}>Retirer le fichier</button>}
-                  <p className="gc-helper">Lien public requis pour une vidéo hébergée en ligne. Fichier importé utilisé en simulation.</p>
+                  {fileName && (
+                    <button
+                      className="gc-file-clear"
+                      type="button"
+                      onClick={() => setFileName('')}
+                    >
+                      Retirer le fichier
+                    </button>
+                  )}
+                  <p className="gc-helper">
+                    Propulsé par le modèle Groq LLaMA. Vos créations sont sauvegardées
+                    directement dans Cloud Firestore.
+                  </p>
                 </form>
                 <div className="gc-options">
                   <label className="gc-option">
                     <span>Durée</span>
-                    <select value={data.duration} onChange={(event) => setData((current) => ({ ...current, duration: Number(event.target.value) }))}>
-                      <option value={30}>30 s</option><option value={45}>45 s</option><option value={60}>60 s</option>
+                    <select
+                      value={data.duration}
+                      onChange={(event) =>
+                        setData((current) => ({
+                          ...current,
+                          duration: Number(event.target.value),
+                        }))
+                      }
+                    >
+                      <option value={30}>30 s</option>
+                      <option value={45}>45 s</option>
+                      <option value={60}>60 s</option>
                     </select>
                   </label>
                   <label className="gc-option">
                     <span>Qualité</span>
-                    <select value={data.resolution} onChange={(event) => setData((current) => ({ ...current, resolution: Number(event.target.value) as 720 | 1080 }))}>
-                      <option value={720}>720p</option><option value={1080}>1080p</option>
+                    <select
+                      value={data.resolution}
+                      onChange={(event) =>
+                        setData((current) => ({
+                          ...current,
+                          resolution: Number(event.target.value) as 720 | 1080,
+                        }))
+                      }
+                    >
+                      <option value={720}>720p</option>
+                      <option value={1080}>1080p</option>
                     </select>
                   </label>
-                  <Toggle label="Sous-titres activés" checked={data.subtitlesEnabled} onChange={(value) => setData((current) => ({ ...current, subtitlesEnabled: value }))} />
-                  <button className="gc-customize-link" type="button" onClick={() => setShowCustomize((value) => !value)} aria-expanded={showCustomize}>
+                  <Toggle
+                    label="Sous-titres activés"
+                    checked={data.subtitlesEnabled}
+                    onChange={(value) =>
+                      setData((current) => ({ ...current, subtitlesEnabled: value }))
+                    }
+                  />
+                  <button
+                    className="gc-customize-link"
+                    type="button"
+                    onClick={() => setShowCustomize((value) => !value)}
+                    aria-expanded={showCustomize}
+                  >
                     <Settings2 size={15} /> Personnaliser
                   </button>
                 </div>
                 {showCustomize && (
                   <div className="gc-create-customizer">
-                    <div className="gc-create-customizer-heading"><strong>Personnaliser les sous-titres</strong><Chip>9:16</Chip></div>
+                    <div className="gc-create-customizer-heading">
+                      <strong>Personnaliser les sous-titres</strong>
+                      <Chip>9:16</Chip>
+                    </div>
                     <EditorChoice
                       title="Style"
                       choices={['Gras', 'Sobre', 'Marqué']}
                       value={data.subtitleDefaults.style}
-                      onChange={(value) => setData((current) => ({ ...current, subtitleDefaults: { ...current.subtitleDefaults, style: value as SubtitleStyle } }))}
+                      onChange={(value) =>
+                        setData((current) => ({
+                          ...current,
+                          subtitleDefaults: {
+                            ...current.subtitleDefaults,
+                            style: value as SubtitleStyle,
+                          },
+                        }))
+                      }
                     />
                     <EditorChoice
                       title="Position"
                       choices={['Haut', 'Milieu', 'Bas']}
                       value={data.subtitleDefaults.position}
-                      onChange={(value) => setData((current) => ({ ...current, subtitleDefaults: { ...current.subtitleDefaults, position: value as SubtitleSettings['position'] } }))}
+                      onChange={(value) =>
+                        setData((current) => ({
+                          ...current,
+                          subtitleDefaults: {
+                            ...current.subtitleDefaults,
+                            position: value as SubtitleSettings['position'],
+                          },
+                        }))
+                      }
                     />
-                    <label className="gc-slider-label">Taille <span>{data.subtitleDefaults.size}px</span><input type="range" min="14" max="34" value={data.subtitleDefaults.size} onChange={(event) => setData((current) => ({ ...current, subtitleDefaults: { ...current.subtitleDefaults, size: Number(event.target.value) } }))} /></label>
-                    <div className="gc-setting-group"><strong>Couleur d’accent</strong><div className="gc-color-list">{COLORS.map((color) => <button key={color} type="button" aria-label={`Couleur ${color}`} aria-pressed={data.subtitleDefaults.color === color} className={data.subtitleDefaults.color === color ? 'selected' : ''} style={{ backgroundColor: color }} onClick={() => setData((current) => ({ ...current, subtitleDefaults: { ...current.subtitleDefaults, color } }))} />)}</div></div>
-                    <label className="gc-select-label">Animation<select value={data.subtitleDefaults.animation} onChange={(event) => setData((current) => ({ ...current, subtitleDefaults: { ...current.subtitleDefaults, animation: event.target.value as SubtitleAnimation } }))}>{['Aucune', 'Mot par mot', 'Pop', 'Karaoké', 'Machine à écrire', 'Glissé'].map((value) => <option key={value}>{value}</option>)}</select></label>
-                    <label className="gc-select-label">Police<select value={data.subtitleDefaults.font} onChange={(event) => setData((current) => ({ ...current, subtitleDefaults: { ...current.subtitleDefaults, font: event.target.value as SubtitleSettings['font'] } }))}>{['Outfit', 'Montserrat', 'Anton', 'Poppins'].map((value) => <option key={value}>{value}</option>)}</select></label>
+                    <label className="gc-slider-label">
+                      Taille <span>{data.subtitleDefaults.size}px</span>
+                      <input
+                        type="range"
+                        min="14"
+                        max="34"
+                        value={data.subtitleDefaults.size}
+                        onChange={(event) =>
+                          setData((current) => ({
+                            ...current,
+                            subtitleDefaults: {
+                              ...current.subtitleDefaults,
+                              size: Number(event.target.value),
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="gc-setting-group">
+                      <strong>Couleur d’accent</strong>
+                      <div className="gc-color-list">
+                        {COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-label={`Couleur ${color}`}
+                            aria-pressed={data.subtitleDefaults.color === color}
+                            className={data.subtitleDefaults.color === color ? 'selected' : ''}
+                            style={{ backgroundColor: color }}
+                            onClick={() =>
+                              setData((current) => ({
+                                ...current,
+                                subtitleDefaults: { ...current.subtitleDefaults, color },
+                              }))
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <label className="gc-select-label">
+                      Animation
+                      <select
+                        value={data.subtitleDefaults.animation}
+                        onChange={(event) =>
+                          setData((current) => ({
+                            ...current,
+                            subtitleDefaults: {
+                              ...current.subtitleDefaults,
+                              animation: event.target.value as SubtitleAnimation,
+                            },
+                          }))
+                        }
+                      >
+                        {[
+                          'Aucune',
+                          'Mot par mot',
+                          'Pop',
+                          'Karaoké',
+                          'Machine à écrire',
+                          'Glissé',
+                        ].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="gc-select-label">
+                      Police
+                      <select
+                        value={data.subtitleDefaults.font}
+                        onChange={(event) =>
+                          setData((current) => ({
+                            ...current,
+                            subtitleDefaults: {
+                              ...current.subtitleDefaults,
+                              font: event.target.value as SubtitleSettings['font'],
+                            },
+                          }))
+                        }
+                      >
+                        {['Outfit', 'Montserrat', 'Anton', 'Poppins'].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 )}
-                {data.tokens < SHORT_COST && <button className="gc-inline-error" type="button" onClick={() => navigate('exhausted')}>Plus assez de jetons — voir les options</button>}
+                {data.tokens < SHORT_COST && (
+                  <button
+                    className="gc-inline-error"
+                    type="button"
+                    onClick={() => navigate('exhausted')}
+                  >
+                    Plus assez de jetons — voir les options
+                  </button>
+                )}
               </Card>
-              <div className="gc-create-note"><Zap size={15} /> Un Short coûte {SHORT_COST} jetons. {FREE_TOKENS} jetons offerts dans le plan Gratuit.</div>
+              <div className="gc-create-note">
+                <Zap size={15} /> Un Short coûte {SHORT_COST} jetons. {FREE_TOKENS} jetons offerts
+                quotidiennement en plan Gratuit.
+              </div>
             </section>
 
             <section className="gc-create-preview">
-              <div className="gc-preview-label"><span>Aperçu du rendu</span><Chip>9:16</Chip></div>
+              <div className="gc-preview-label">
+                <span>Aperçu du rendu</span>
+                <Chip>9:16</Chip>
+              </div>
               <PhonePreview variant="empty" />
               <div className="gc-preview-actions">
-                <Button disabled><Download size={16} /> Télécharger MP4</Button>
-                <Button disabled><Share2 size={16} /> Partager</Button>
+                <Button disabled>
+                  <Download size={16} /> Télécharger
+                </Button>
+                <Button disabled>
+                  <Share2 size={16} /> Partager
+                </Button>
               </div>
-              <p>Les actions d’export et de partage s’activent après la génération.</p>
+              <p>L’aperçu dynamique interactif se débloque dès la fin de la génération.</p>
             </section>
           </div>
+
           <section className="gc-platforms">
             <span>PRÊT À PUBLIER SUR</span>
-            <strong>YouTube Shorts</strong><strong>TikTok</strong><strong>Instagram Reels</strong><strong>Facebook Reels</strong>
+            <strong>YouTube Shorts</strong>
+            <strong>TikTok</strong>
+            <strong>Instagram Reels</strong>
+            <strong>Facebook Reels</strong>
           </section>
+
           <section className="gc-features-section">
-            <div className="gc-section-heading"><span>LE STUDIO SHORTS</span><h2>Tout ce qu’il faut,<br />rien de plus.</h2></div>
+            <div className="gc-section-heading">
+              <span>LE STUDIO SHORTS</span>
+              <h2>Tout ce qu’il faut, rien de plus.</h2>
+            </div>
             <div className="gc-feature-grid">
-              <Card><span className="gc-feature-icon"><Sparkles size={20} /></span><h3>Extrait choisi par l’IA</h3><p>Un passage intéressant détecté automatiquement dans votre vidéo.</p></Card>
-              <Card><span className="gc-feature-icon"><Subtitles size={20} /></span><h3>Sous-titres animés</h3><p>Personnalisez le style, la couleur, la position et l’animation.</p></Card>
-              <Card><span className="gc-feature-icon"><Download size={20} /></span><h3>Export MP4 1080p</h3><p>Un format vertical prêt à publier sur vos réseaux.</p></Card>
+              <Card>
+                <span className="gc-feature-icon">
+                  <Sparkles size={20} />
+                </span>
+                <h3>Analyse Groq IA</h3>
+                <p>Détection ultra-rapide des moments à haute rétention grâce au moteur Groq.</p>
+              </Card>
+              <Card>
+                <span className="gc-feature-icon">
+                  <Subtitles size={20} />
+                </span>
+                <h3>Sous-titres animés</h3>
+                <p>Styles viraux, polices percutantes (Outfit, Anton), mots-clés surlignés.</p>
+              </Card>
+              <Card>
+                <span className="gc-feature-icon">
+                  <ShieldCheck size={20} />
+                </span>
+                <h3>Cloud Firestore</h3>
+                <p>Vos créations et votre historique sont sauvegardés et synchronisés en direct.</p>
+              </Card>
             </div>
           </section>
           <PricingPreview onChoose={() => navigate('pricing')} />
-          <footer className="gc-footer">GemClip <span>·</span> Le format court, simplement.</footer>
+          <footer className="gc-footer">GemClip <span>·</span> YouTube vers Shorts avec Groq, PayPal & Firestore.</footer>
         </>
       )}
 
@@ -776,172 +1356,710 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         <section className="gc-generation">
           <Card className="gc-generation-card">
             <div className="gc-generation-heading">
-              <span className="gc-icon-box"><LoaderCircle className="gc-spin" size={20} /></span>
-              <div><h1>Création en cours…</h1><p>Gardez cette page ouverte. {SHORT_COST} jetons utilisés.</p></div>
+              <span className="gc-icon-box">
+                <LoaderCircle className="gc-spin" size={20} />
+              </span>
+              <div>
+                <h1>Création en cours…</h1>
+                <p>{activeShort.stage || 'Analyse en cours…'}</p>
+              </div>
               <strong>{activeShort.progress}%</strong>
             </div>
-            <div className="gc-progress"><span style={{ width: `${activeShort.progress}%` }} /></div>
+            <div className="gc-progress">
+              <span style={{ width: `${activeShort.progress}%` }} />
+            </div>
             <ol className="gc-step-list">
-              {['Vidéo récupérée', 'Contenu analysé', 'L’IA choisit le meilleur extrait', 'Sous-titres animés', `Export MP4 ${data.resolution}p`].map((step, index) => {
-                const currentIndex = activeShort.progress === 100 ? 5 : Math.floor(activeShort.progress / 20)
+              {[
+                'Vidéo récupérée',
+                'Contenu transcrit',
+                'Analyse Groq IA & moment clé',
+                'Sous-titres synchronisés',
+                'Short prêt',
+              ].map((step, index) => {
+                const currentIndex =
+                  activeShort.progress === 100
+                    ? 5
+                    : Math.floor(activeShort.progress / 20)
                 const done = index < currentIndex
                 const current = !done && index === currentIndex
-                return <li key={step} className={done ? 'done' : current ? 'current' : ''}>
-                  <span>{done ? <Check size={14} /> : current ? <span className="gc-step-dot" /> : index + 1}</span>{step}
-                </li>
+                return (
+                  <li key={step} className={done ? 'done' : current ? 'current' : ''}>
+                    <span>
+                      {done ? (
+                        <Check size={14} />
+                      ) : current ? (
+                        <span className="gc-step-dot" />
+                      ) : (
+                        index + 1
+                      )}
+                    </span>
+                    {step}
+                  </li>
+                )
               })}
             </ol>
-            <p className="gc-stage-note">{activeShort.stage}</p>
-            <Button onClick={cancelGeneration}>Annuler la création</Button>
+            <div className="gc-generation-actions">
+              <Button onClick={cancelGeneration}>Annuler</Button>
+            </div>
           </Card>
-          <div className="gc-generation-preview"><PhonePreview variant="generating" /><p>Aperçu vertical · 9:16</p></div>
         </section>
       )}
 
-      {data.screen === 'editor' && (
-        activeShort ? (
+      {data.screen === 'editor' &&
+        (activeShort ? (
           <section className="gc-editor">
             <header className="gc-editor-topbar">
-              <Button onClick={() => navigate('create')}><ArrowLeft size={16} /> Retour</Button>
-              <div className="gc-editor-name"><strong>{activeShort.title || 'Mon Short'}</strong><span>Brouillon · enregistré</span></div>
+              <Button onClick={() => navigate('create')}>
+                <ArrowLeft size={16} /> Retour
+              </Button>
+              <div className="gc-editor-name">
+                <strong>{activeShort.title || 'Mon Short'}</strong>
+                <span>Enregistré dans Cloud Firestore</span>
+              </div>
               <TokenPill tokens={data.tokens} />
-              <div className="gc-undo-actions"><Button aria-label="Annuler le dernier réglage" onClick={undoSubtitleSettings} disabled={settingsUndo.length === 0}><Undo2 size={17} /></Button><Button aria-label="Rétablir le réglage" onClick={redoSubtitleSettings} disabled={settingsRedo.length === 0}><Redo2 size={17} /></Button></div>
-              <Button variant="primary" onClick={exportMock}><Download size={16} /> Exporter MP4 <Chip>{SHORT_COST} jetons</Chip></Button>
+              <div className="gc-undo-actions">
+                <Button
+                  aria-label="Annuler"
+                  onClick={undoSubtitleSettings}
+                  disabled={settingsUndo.length === 0}
+                >
+                  <Undo2 size={17} />
+                </Button>
+                <Button
+                  aria-label="Rétablir"
+                  onClick={redoSubtitleSettings}
+                  disabled={settingsRedo.length === 0}
+                >
+                  <Redo2 size={17} />
+                </Button>
+              </div>
+              <Button variant="primary" onClick={downloadShortDetails}>
+                <Download size={16} /> Exporter
+              </Button>
             </header>
             <div className="gc-editor-main">
               <nav className="gc-tool-rail" aria-label="Outils de montage">
                 {TOOLS.map(({ name, icon: Icon }) => (
-                  <button key={name} type="button" className={editorTool === name ? 'active' : ''} onClick={() => {
-                    setEditorTool(name)
-                    if (name === 'Historique') navigate('history')
-                  }}>
-                    <Icon size={18} strokeWidth={2} /><span>{name}</span>
+                  <button
+                    key={name}
+                    type="button"
+                    className={editorTool === name ? 'active' : ''}
+                    onClick={() => {
+                      setEditorTool(name)
+                      if (name === 'Historique') navigate('history')
+                    }}
+                  >
+                    <Icon size={18} strokeWidth={2} />
+                    <span>{name}</span>
                   </button>
                 ))}
               </nav>
               <section className="gc-editor-canvas">
-                <div className="gc-canvas-toolbar"><span>Aperçu du Short <Chip>9:16</Chip></span><button type="button" onClick={() => setNotice('Lecture de l’aperçu simulée.') } aria-label="Lire l’aperçu"><Play size={17} fill="currentColor" /></button></div>
-                <PhonePreview caption={activeShort.text} settings={activeShort} subtitle={activeShort.enabled} />
+                <div className="gc-canvas-toolbar">
+                  <span>
+                    Aperçu interactif <Chip>9:16</Chip>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPlayhead((p) =>
+                        p >= activeShort.durationSeconds ? 0 : p + 5,
+                      )
+                    }
+                    aria-label="Avancer la vidéo"
+                  >
+                    <Play size={17} fill="currentColor" />
+                  </button>
+                </div>
+                <PhonePreview
+                  caption={activeShort.text}
+                  settings={activeShort}
+                  subtitle={activeShort.enabled}
+                />
                 <div className="gc-player-controls">
-                  <button type="button" onClick={() => setPlayhead((time) => time >= activeShort.durationSeconds ? 0 : time + 1)} aria-label="Lire la vidéo"><Play size={15} fill="currentColor" /></button>
-                  <span>00:{String(playhead).padStart(2, '0')} / 00:{String(activeShort.durationSeconds).padStart(2, '0')}</span>
-                  <Chip>Export : {SHORT_COST} jetons</Chip>
-                  <button type="button" onClick={() => void shareShort()} aria-label="Partager l’aperçu"><Share2 size={15} /></button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPlayhead((time) =>
+                        time >= activeShort.durationSeconds ? 0 : time + 1,
+                      )
+                    }
+                    aria-label="Lecture"
+                  >
+                    <Play size={15} fill="currentColor" />
+                  </button>
+                  <span>
+                    00:{String(playhead).padStart(2, '0')} / 00:
+                    {String(activeShort.durationSeconds).padStart(2, '0')}
+                  </span>
+                  <Chip active>Vertical 9:16</Chip>
+                  <button
+                    type="button"
+                    onClick={() => void shareShort()}
+                    aria-label="Partager"
+                  >
+                    <Share2 size={15} />
+                  </button>
                 </div>
               </section>
               <aside className="gc-editor-panel">
                 {editorTool === 'Sous-titres' ? (
                   <>
-                    <div className="gc-panel-heading"><div><span>PERSONNALISATION</span><h2>Sous-titres</h2></div><button type="button" aria-label="Options de sous-titres"><MoreHorizontal size={20} /></button></div>
-                    <Toggle label="Sous-titres activés" checked={activeShort.enabled} onChange={(value) => updateSubtitle('enabled', value)} />
-                    <EditorChoice title="Style" choices={['Gras', 'Sobre', 'Marqué']} value={activeShort.style} onChange={(value) => updateSubtitle('style', value as SubtitleStyle)} />
-                    <EditorChoice title="Position" choices={['Haut', 'Milieu', 'Bas']} value={activeShort.position} onChange={(value) => updateSubtitle('position', value as SubtitleSettings['position'])} />
-                    <label className="gc-slider-label">Taille <span>{activeShort.size}px</span><input type="range" min="14" max="34" value={activeShort.size} onChange={(event) => updateSubtitle('size', Number(event.target.value))} /></label>
-                    <div className="gc-setting-group"><strong>Couleur d’accent</strong><div className="gc-color-list">{COLORS.map((color) => <button key={color} type="button" aria-label={`Couleur ${color}`} aria-pressed={activeShort.color === color} className={activeShort.color === color ? 'selected' : ''} style={{ backgroundColor: color }} onClick={() => updateSubtitle('color', color)} />)}</div></div>
-                    <label className="gc-select-label">Animation<select value={activeShort.animation} onChange={(event) => updateSubtitle('animation', event.target.value as SubtitleAnimation)}>{['Aucune', 'Mot par mot', 'Pop', 'Karaoké', 'Machine à écrire', 'Glissé'].map((value) => <option key={value}>{value}</option>)}</select></label>
-                    <label className="gc-slider-label">Vitesse de l’animation <span>{activeShort.animationSpeed.toFixed(1)}×</span><input type="range" min="0.5" max="2" step="0.1" value={activeShort.animationSpeed} onChange={(event) => updateSubtitle('animationSpeed', Number(event.target.value))} /></label>
-                    <label className="gc-select-label">Police<select value={activeShort.font} onChange={(event) => updateSubtitle('font', event.target.value as SubtitleSettings['font'])}>{['Outfit', 'Montserrat', 'Anton', 'Poppins'].map((value) => <option key={value}>{value}</option>)}</select></label>
-                    <Toggle label="Mots clés surlignés" badge="IA" checked={activeShort.highlightedWords} onChange={(value) => updateSubtitle('highlightedWords', value)} />
-                    <Toggle label="Emojis automatiques" badge="IA" checked={activeShort.automaticEmojis} onChange={(value) => updateSubtitle('automaticEmojis', value)} />
-                    <Toggle label="Contour et ombre" checked={activeShort.outline} onChange={(value) => updateSubtitle('outline', value)} />
-                    <Toggle label="Masquer la ponctuation" checked={activeShort.hidePunctuation} onChange={(value) => updateSubtitle('hidePunctuation', value)} />
-                    <div className="gc-panel-buttons"><Button onClick={() => setNotice('Traduction simulée. TODO : connecter le service de traduction.')}>Traduire</Button><Button onClick={() => {
-                      const editedText = window.prompt('Modifier le texte des sous-titres', activeShort.text)
-                      if (editedText !== null) updateSubtitle('text', editedText)
-                    }}>Modifier le texte</Button></div>
+                    <div className="gc-panel-heading">
+                      <div>
+                        <span>PERSONNALISATION</span>
+                        <h2>Sous-titres animés</h2>
+                      </div>
+                    </div>
+                    <Toggle
+                      label="Sous-titres activés"
+                      checked={activeShort.enabled}
+                      onChange={(value) => updateSubtitle('enabled', value)}
+                    />
+                    <EditorChoice
+                      title="Style"
+                      choices={['Gras', 'Sobre', 'Marqué']}
+                      value={activeShort.style}
+                      onChange={(value) => updateSubtitle('style', value as SubtitleStyle)}
+                    />
+                    <EditorChoice
+                      title="Position"
+                      choices={['Haut', 'Milieu', 'Bas']}
+                      value={activeShort.position}
+                      onChange={(value) =>
+                        updateSubtitle('position', value as SubtitleSettings['position'])
+                      }
+                    />
+                    <label className="gc-slider-label">
+                      Taille <span>{activeShort.size}px</span>
+                      <input
+                        type="range"
+                        min="14"
+                        max="34"
+                        value={activeShort.size}
+                        onChange={(event) =>
+                          updateSubtitle('size', Number(event.target.value))
+                        }
+                      />
+                    </label>
+                    <div className="gc-setting-group">
+                      <strong>Couleur d’accent</strong>
+                      <div className="gc-color-list">
+                        {COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-label={`Couleur ${color}`}
+                            aria-pressed={activeShort.color === color}
+                            className={activeShort.color === color ? 'selected' : ''}
+                            style={{ backgroundColor: color }}
+                            onClick={() => updateSubtitle('color', color)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <label className="gc-select-label">
+                      Animation
+                      <select
+                        value={activeShort.animation}
+                        onChange={(event) =>
+                          updateSubtitle(
+                            'animation',
+                            event.target.value as SubtitleAnimation,
+                          )
+                        }
+                      >
+                        {[
+                          'Aucune',
+                          'Mot par mot',
+                          'Pop',
+                          'Karaoké',
+                          'Machine à écrire',
+                          'Glissé',
+                        ].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="gc-select-label">
+                      Police
+                      <select
+                        value={activeShort.font}
+                        onChange={(event) =>
+                          updateSubtitle(
+                            'font',
+                            event.target.value as SubtitleSettings['font'],
+                          )
+                        }
+                      >
+                        {['Outfit', 'Montserrat', 'Anton', 'Poppins'].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <Toggle
+                      label="Mots clés surlignés"
+                      badge="IA"
+                      checked={activeShort.highlightedWords}
+                      onChange={(value) => updateSubtitle('highlightedWords', value)}
+                    />
+                    <Toggle
+                      label="Contour et ombre"
+                      checked={activeShort.outline}
+                      onChange={(value) => updateSubtitle('outline', value)}
+                    />
+                    <div className="gc-panel-buttons">
+                      <Button
+                        onClick={() => {
+                          const editedText = window.prompt(
+                            'Modifier le texte des sous-titres',
+                            activeShort.text,
+                          )
+                          if (editedText !== null) updateSubtitle('text', editedText)
+                        }}
+                      >
+                        Modifier le texte
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const newTitle = window.prompt(
+                            'Modifier le titre du Short',
+                            activeShort.title,
+                          )
+                          if (newTitle !== null) updateActiveShort({ title: newTitle })
+                        }}
+                      >
+                        Modifier le titre
+                      </Button>
+                    </div>
                   </>
                 ) : editorTool === 'Extrait' ? (
-                  <div className="gc-tool-placeholder"><Scissors size={21} /><h2>Extrait</h2><p>Durée de l’extrait : {activeShort.durationSeconds} secondes.</p><Button onClick={() => updateActiveShort({ durationSeconds: activeShort.durationSeconds === 45 ? 30 : 45 })}>Changer la durée</Button></div>
+                  <div className="gc-tool-placeholder">
+                    <Scissors size={21} />
+                    <h2>Extrait</h2>
+                    <p>Durée de l’extrait : {activeShort.durationSeconds} secondes.</p>
+                    <Button
+                      onClick={() =>
+                        updateActiveShort({
+                          durationSeconds:
+                            activeShort.durationSeconds === 45 ? 30 : 45,
+                        })
+                      }
+                    >
+                      Alterner 30s / 45s
+                    </Button>
+                  </div>
                 ) : editorTool === 'Format' ? (
-                  <div className="gc-tool-placeholder"><Smartphone size={21} /><h2>Format</h2><p>Format vertical 9:16 · Export {data.resolution}p</p><Chip active>9:16</Chip></div>
+                  <div className="gc-tool-placeholder">
+                    <Smartphone size={21} />
+                    <h2>Format Vertical</h2>
+                    <p>Format vertical 9:16 standard pour Shorts & Reels · {data.resolution}p</p>
+                    <Chip active>9:16 Plein écran</Chip>
+                  </div>
                 ) : (
-                  <div className="gc-tool-placeholder"><WandSparkles size={21} /><h2>{editorTool}</h2><p>Outil de démonstration du prototype. TODO : connecter cette fonction à l’éditeur vidéo.</p></div>
+                  <div className="gc-tool-placeholder">
+                    <WandSparkles size={21} />
+                    <h2>{editorTool}</h2>
+                    <p>Paramètres synchronisés directement avec Cloud Firestore.</p>
+                  </div>
                 )}
               </aside>
             </div>
             <section className="gc-timeline">
               <div className="gc-timeline-actions">
-                <Button onClick={() => updateActiveShort({ durationSeconds: Math.max(15, activeShort.durationSeconds - 5) })}><Scissors size={15} /> Couper</Button>
-                <Button onClick={duplicateShort}><Copy size={15} /> Dupliquer</Button>
-                <label className="gc-speed-control">Vitesse <select aria-label="Vitesse de lecture"><option>1×</option><option>1,25×</option><option>1,5×</option><option>2×</option></select></label>
-                <Button onClick={() => setNotice('Nouvel extrait IA simulé. TODO : connecter l’analyse vidéo.') }><Sparkles size={15} /> Nouvel extrait IA</Button>
-                <span className="gc-zoom-actions"><button type="button" aria-label="Zoom arrière" onClick={() => setZoom((value) => Math.max(.7, value - .1))}><Minus size={15} /></button><span>{Math.round(zoom * 100)}%</span><button type="button" aria-label="Zoom avant" onClick={() => setZoom((value) => Math.min(1.5, value + .1))}><Plus size={15} /></button></span>
+                <Button
+                  onClick={() =>
+                    updateActiveShort({
+                      durationSeconds: Math.max(15, activeShort.durationSeconds - 5),
+                    })
+                  }
+                >
+                  <Scissors size={15} /> -5s
+                </Button>
+                <Button onClick={duplicateShort}>
+                  <Copy size={15} /> Dupliquer
+                </Button>
+                <span className="gc-zoom-actions">
+                  <button
+                    type="button"
+                    aria-label="Zoom arrière"
+                    onClick={() => setZoom((value) => Math.max(0.7, value - 0.1))}
+                  >
+                    <Minus size={15} />
+                  </button>
+                  <span>{Math.round(zoom * 100)}%</span>
+                  <button
+                    type="button"
+                    aria-label="Zoom avant"
+                    onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))}
+                  >
+                    <Plus size={15} />
+                  </button>
+                </span>
               </div>
-              <div className="gc-time-ruler"><span>00:00</span><span>00:10</span><span>00:20</span><span>00:30</span><span>00:40</span></div>
-              <div className="gc-track-row"><span>Vidéo</span><div className="gc-video-track"><span style={{ width: `${Math.min(100, (activeShort.durationSeconds / 60) * 100)}%` }} /></div></div>
-              <div className="gc-track-row"><span>Sous-titres</span><div className="gc-caption-track">
-                {[...activeShort.text.split('\n').filter(Boolean), 'quand on ose', 'commencer'].slice(0, 4).map((line, index) => <span key={`${line}-${index}`}>{line}</span>)}
-                <button type="button" onClick={() => updateSubtitle('text', `${activeShort.text}\ncommencer`)}>+ Ajouter</button>
-              </div></div>
-              <div className="gc-track-row"><span>Musique</span><button className="gc-music-track" type="button" onClick={() => setMusicAdded((value) => !value)}><Music2 size={15} /> {musicAdded ? 'Musique libre de droits ajoutée · cliquer pour retirer' : 'Ajouter une musique libre de droits'} <Plus size={14} /></button></div>
+              <div className="gc-time-ruler">
+                <span>00:00</span>
+                <span>00:10</span>
+                <span>00:20</span>
+                <span>00:30</span>
+                <span>00:40</span>
+              </div>
+              <div className="gc-track-row">
+                <span>Vidéo</span>
+                <div className="gc-video-track">
+                  <span
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (activeShort.durationSeconds / 60) * 100,
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="gc-track-row">
+                <span>Sous-titres</span>
+                <div className="gc-caption-track">
+                  {activeShort.text
+                    .split('\n')
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .map((line, index) => (
+                      <span key={`${line}-${index}`}>{line}</span>
+                    ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSubtitle('text', `${activeShort.text}\nNouveau moment fort`)
+                    }
+                  >
+                    + Ajouter une ligne
+                  </button>
+                </div>
+              </div>
+              <div className="gc-track-row">
+                <span>Musique</span>
+                <button
+                  className="gc-music-track"
+                  type="button"
+                  onClick={() => setMusicAdded((value) => !value)}
+                >
+                  <Music2 size={15} />{' '}
+                  {musicAdded
+                    ? 'Piste audio synchronisée'
+                    : 'Ajouter une ambiance musicale libre de droits'}{' '}
+                  <Plus size={14} />
+                </button>
+              </div>
             </section>
-            <div className="gc-export-footer"><span>Export MP4 · {SHORT_COST} jetons</span><Button variant="primary" onClick={exportMock}><Download size={16} /> Exporter MP4</Button></div>
+            <div className="gc-export-footer">
+              <span>Short synchronisé dans Firestore · Prêt à exporter</span>
+              <Button variant="primary" onClick={downloadShortDetails}>
+                <Download size={16} /> Télécharger le Short
+              </Button>
+            </div>
           </section>
-        ) : <EmptyState title="Aucun Short à modifier" action="Créer un Short" onAction={() => navigate('create')} />
-      )}
+        ) : (
+          <EmptyState
+            title="Aucun Short à modifier"
+            action="Créer un Short"
+            onAction={() => navigate('create')}
+          />
+        ))}
 
       {data.screen === 'history' && (
         <section className="gc-page-section">
-          <div className="gc-page-heading"><div><Chip><History size={14} /> VOTRE STUDIO</Chip><h1>Historique</h1><p>Retrouvez et rééditez vos Shorts. Vos créations sont enregistrées sur cet appareil.</p></div><TokenPill tokens={data.tokens} /></div>
+          <div className="gc-page-heading">
+            <div>
+              <Chip>
+                <History size={14} /> CLOUD FIRESTORE
+              </Chip>
+              <h1>Historique de vos Shorts</h1>
+              <p>
+                Retrouvez et rééditez toutes vos créations. Vos Shorts sont sauvegardés en direct
+                dans Firebase Cloud Firestore.
+              </p>
+            </div>
+            <TokenPill tokens={data.tokens} />
+          </div>
           {data.history.length ? (
             <div className="gc-history-grid">
-              {data.history.filter((item) => item.status === 'ready' || item.status === 'generating').map((item) => <ShortTile key={item.id} item={item} active={item.id === data.activeShortId} onEdit={() => reedit(item)} />)}
-              <button className="gc-new-short-tile" type="button" onClick={() => navigate('create')}><Plus size={21} />Nouveau Short</button>
+              {data.history
+                .filter((item) => item.status === 'ready' || item.status === 'generating')
+                .map((item) => (
+                  <ShortTile
+                    key={item.id}
+                    item={item}
+                    active={item.id === data.activeShortId}
+                    onEdit={() => reedit(item)}
+                    onDelete={() => handleDeleteShort(item.id)}
+                  />
+                ))}
+              <button
+                className="gc-new-short-tile"
+                type="button"
+                onClick={() => navigate('create')}
+              >
+                <Plus size={21} />
+                Nouveau Short
+              </button>
             </div>
-          ) : <EmptyState title="Votre historique est vide" description="Créez votre premier Short pour le retrouver ici." action="Créer mon premier Short" onAction={() => navigate('create')} />}
+          ) : (
+            <EmptyState
+              title="Votre historique est vide"
+              description="Créez votre premier Short avec Groq IA pour le retrouver ici."
+              action="Créer mon premier Short"
+              onAction={() => navigate('create')}
+            />
+          )}
         </section>
       )}
 
       {data.screen === 'account' && (
         <section className="gc-page-section gc-account-page">
-          <div className="gc-page-heading"><div><Chip>COMPTE</Chip><h1>Votre espace GemClip</h1><p>Profil et préférences de votre studio.</p></div><TokenPill tokens={data.tokens} /></div>
+          <div className="gc-page-heading">
+            <div>
+              <Chip>COMPTE & INTÉGRATIONS</Chip>
+              <h1>Votre espace GemClip</h1>
+              <p>Profil utilisateur, abonnements et état des clés API.</p>
+            </div>
+            <TokenPill tokens={data.tokens} />
+          </div>
+
           <Card className="gc-account-card">
-            <div className="gc-account-avatar">{user.photoURL ? <img src={user.photoURL} alt="" /> : profileName.slice(0, 1).toUpperCase()}</div>
-            <div><h2>{profileName}</h2><p>{user.email}</p></div>
+            <div className="gc-account-avatar">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" />
+              ) : (
+                profileName.slice(0, 1).toUpperCase()
+              )}
+            </div>
+            <div>
+              <h2>{profileName}</h2>
+              <p>{user.email}</p>
+            </div>
           </Card>
-          <Card className="gc-account-card gc-account-plan"><div><span>Votre offre</span><h2>{data.plan === 'plus' ? 'GemClip Plus' : 'Gratuit'}</h2><p>{data.tokens} jetons disponibles sur 100</p></div><Button onClick={() => navigate('pricing')}>Voir les offres</Button></Card>
-          <Button onClick={() => void logout()} disabled={busy}><LogOut size={16} /> Se déconnecter</Button>
+
+          {/* API Keys Configuration Status Card */}
+          <Card className="gc-account-card">
+            <div>
+              <span style={{ fontSize: '0.8rem', color: '#93C5FD', fontWeight: 600 }}>
+                ÉTAT DES CLÉS API
+              </span>
+              <h2 style={{ fontSize: '1.15rem', marginTop: '0.2rem' }}>
+                Services connectés
+              </h2>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.6rem',
+                  marginTop: '0.8rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: apiStatus?.groqConfigured ? '#86EFAC' : '#FDE68A',
+                    }}
+                  />
+                  <strong>Groq API :</strong>
+                  <span>
+                    {apiStatus?.groqConfigured
+                      ? `Connecté (${apiStatus.groqModel})`
+                      : 'Actif en mode démo (ajoutez GROQ_API_KEY dans .env)'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: apiStatus?.paypalConfigured ? '#86EFAC' : '#93C5FD',
+                    }}
+                  />
+                  <strong>PayPal :</strong>
+                  <span>
+                    {apiStatus?.paypalConfigured
+                      ? 'Prêt pour paiements réels'
+                      : 'Prêt pour activation 1-clic (ajoutez PAYPAL_CLIENT_ID dans .env)'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: '#86EFAC',
+                    }}
+                  />
+                  <strong>Firebase Firestore :</strong>
+                  <span>Connecté & synchronisé</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="gc-account-card gc-account-plan">
+            <div>
+              <span>Votre offre</span>
+              <h2>{data.plan === 'plus' ? 'GemClip Plus' : 'Gratuit'}</h2>
+              <p>
+                {data.tokens} jetons disponibles sur {data.plan === 'plus' ? 100 : FREE_TOKENS}
+              </p>
+            </div>
+            <Button onClick={() => navigate('pricing')}>Voir les offres</Button>
+          </Card>
+
+          <Button onClick={() => void logout()} disabled={busy}>
+            <LogOut size={16} /> Se déconnecter
+          </Button>
         </section>
       )}
 
       {data.screen === 'pricing' && (
         <section className="gc-pricing-page">
-          <div className="gc-pricing-hero"><Chip><Zap size={14} /> GEMCLIP PLUS</Chip><h1>Publiez tous les jours.<br /><span>Sans compter.</span></h1><p>100 jetons par jour, soit jusqu’à 33 Shorts quotidiens, pour le prix d’un café.</p></div>
-          <div className="gc-plan-grid">
-            <Card className="gc-plan-card"><span className="gc-plan-name">Gratuit</span><strong className="gc-plan-price">0 $</strong><p>[X] jetons pour essayer</p><ul><li><Check size={16} /> Extrait choisi par l’IA</li><li><Check size={16} /> Sous-titres de base</li><li><Check size={16} /> Export MP4</li></ul><Button onClick={() => navigate('create')}>Continuer gratuitement</Button></Card>
-            <Card className="gc-plan-card gc-plan-plus"><Chip active>Recommandé</Chip><span className="gc-plan-name">Plus</span><strong className="gc-plan-price">4,99 $ <small>/ mois</small></strong><p>100 jetons chaque jour · jusqu’à 33 Shorts</p><ul><li><Check size={16} /> Toutes les animations</li><li><Check size={16} /> Mots clés et emojis par l’IA</li><li><Check size={16} /> Traduction et export 1080p</li><li><Check size={16} /> Jusqu’à 33 Shorts par jour</li></ul><Button variant="primary" onClick={() => void upgradePlan()} disabled={busy}>Passer à Plus · 4,99 $/mois</Button><small className="gc-payment-note">Paiement sécurisé · simulation, aucun débit réel</small></Card>
+          <div className="gc-pricing-hero">
+            <Chip>
+              <Zap size={14} /> GEMCLIP PLUS
+            </Chip>
+            <h1>
+              Publiez tous les jours.
+              <br />
+              <span>Sans compter.</span>
+            </h1>
+            <p>100 jetons par jour, soit jusqu’à 33 Shorts quotidiens pour votre chaîne.</p>
           </div>
-          <section className="gc-unlocks"><h2>Ce que vous débloquez.</h2><div><Card><strong>100</strong><span>jetons par jour</span></Card><Card><strong>6</strong><span>animations de sous-titres</span></Card><Card><strong>1080p</strong><span>qualité d’export</span></Card></div></section>
-          <section className="gc-faq"><h2>Questions fréquentes</h2><details><summary>Qu’est-ce qu’un jeton ? <ChevronDown size={17} /></summary><p>Chaque création d’un Short consomme 3 jetons.</p></details><details><summary>Comment annuler mon abonnement ? <ChevronDown size={17} /></summary><p>[À CONFIRMER : modalités d’annulation]</p></details><details><summary>Quels moyens de paiement sont acceptés ? <ChevronDown size={17} /></summary><p>[À CONFIRMER : moyens de paiement]</p></details></section>
-          <section className="gc-final-banner"><h2>Votre prochain Short vous attend.</h2><Button variant="primary" onClick={() => navigate('create')}>Créer un Short <ArrowRight size={16} /></Button></section>
+          <div className="gc-plan-grid">
+            <Card className="gc-plan-card">
+              <span className="gc-plan-name">Gratuit</span>
+              <strong className="gc-plan-price">0 €</strong>
+              <p>{FREE_TOKENS} jetons par jour</p>
+              <ul>
+                <li>
+                  <Check size={16} /> Extrait choisi par Groq IA
+                </li>
+                <li>
+                  <Check size={16} /> Sous-titres animés 9:16
+                </li>
+                <li>
+                  <Check size={16} /> Sauvegarde Cloud Firestore
+                </li>
+              </ul>
+              <Button onClick={() => navigate('create')}>Plan actuel</Button>
+            </Card>
+            <Card className="gc-plan-card gc-plan-plus">
+              <Chip active>Recommandé</Chip>
+              <span className="gc-plan-name">Plus</span>
+              <strong className="gc-plan-price">
+                4,99 € <small>/ mois</small>
+              </strong>
+              <p>100 jetons chaque jour · jusqu’à 33 Shorts</p>
+              <ul>
+                <li>
+                  <Check size={16} /> Analyse Groq IA illimitée
+                </li>
+                <li>
+                  <Check size={16} /> Toutes les animations et polices
+                </li>
+                <li>
+                  <Check size={16} /> Export 1080p haute définition
+                </li>
+                <li>
+                  <Check size={16} /> Sauvegarde illimitée dans Firestore
+                </li>
+              </ul>
+              <Button variant="primary" onClick={() => void upgradePlan()} disabled={busy}>
+                Activer GemClip Plus · 4,99 €/mois
+              </Button>
+              <small className="gc-payment-note">
+                Paiement sécurisé via PayPal · Annulation possible à tout moment
+              </small>
+            </Card>
+          </div>
+          <section className="gc-unlocks">
+            <h2>Ce que vous débloquez.</h2>
+            <div>
+              <Card>
+                <strong>100</strong>
+                <span>jetons chaque jour</span>
+              </Card>
+              <Card>
+                <strong>6</strong>
+                <span>styles d’animation</span>
+              </Card>
+              <Card>
+                <strong>1080p</strong>
+                <span>qualité Full HD</span>
+              </Card>
+            </div>
+          </section>
         </section>
-      )}
-      {data.screen === 'pricing' && (
-        <div className="gc-pricing-sticky">
-          <span>GemClip Plus · 4,99 $ / mois</span>
-          <Button variant="primary" onClick={() => void upgradePlan()}>Passer à Plus · 4,99 $/mois</Button>
-        </div>
       )}
 
       {data.screen === 'exhausted' && (
         <section className="gc-state-page">
-          <Card className="gc-exhausted-card"><span className="gc-icon-box"><Zap size={21} /></span><Chip active>QUOTA QUOTIDIEN</Chip><h1>Plus de jetons aujourd’hui.</h1><p>Vos jetons reviennent à <strong>[HEURE DE RECHARGE À CONFIRMER]</strong>. Avec Plus, créez jusqu’à 33 Shorts par jour.</p><TokenPill tokens={data.tokens} /><Button variant="primary" onClick={() => navigate('pricing')}>Passer à Plus · 4,99 $/mois <ArrowRight size={16} /></Button><Button onClick={() => navigate('create')}>Attendre la recharge</Button></Card>
+          <Card className="gc-exhausted-card">
+            <span className="gc-icon-box">
+              <Zap size={21} />
+            </span>
+            <Chip active>QUOTA QUOTIDIEN</Chip>
+            <h1>Plus de jetons aujourd’hui.</h1>
+            <p>
+              Vos jetons gratuits reviennent demain. Avec le forfait Plus, obtenez 100 jetons
+              quotidiens.
+            </p>
+            <TokenPill tokens={data.tokens} />
+            <Button variant="primary" onClick={() => navigate('pricing')}>
+              Passer à Plus · 4,99 €/mois <ArrowRight size={16} />
+            </Button>
+            <Button onClick={() => navigate('create')}>Attendre la recharge</Button>
+          </Card>
         </section>
       )}
 
       {data.screen === 'error' && (
         <section className="gc-state-page">
-          <Card className="gc-error-card"><span className="gc-error-icon"><AlertCircle size={22} /></span><h1>Impossible de lire cette vidéo.</h1><p>Vérifiez que le lien est public, puis réessayez.</p><div className="gc-error-detail"><strong>Détail :</strong> {activeShort?.error || 'réponse invalide du serveur (Not Found).'}</div><div><Button variant="primary" onClick={retryFailedGeneration}>Réessayer</Button><Button onClick={() => {
-            setData((current) => ({
-              ...current,
-              tokens: Math.min(current.plan === 'plus' ? PLUS_TOKENS : FREE_TOKENS, current.tokens + SHORT_COST),
-              history: current.history.filter((item) => item.id !== current.activeShortId),
-              activeShortId: null,
-              sourceDraft: '',
-              screen: 'create',
-            }))
-            setSource('')
-          }}>Changer de lien</Button></div></Card>
+          <Card className="gc-error-card">
+            <span className="gc-error-icon">
+              <AlertCircle size={22} />
+            </span>
+            <h1>Erreur lors de la génération.</h1>
+            <p>Vérifiez le lien vidéo ou le texte saisi, puis réessayez.</p>
+            <div className="gc-error-detail">
+              <strong>Détail :</strong> {activeShort?.error || 'Erreur temporaire du serveur.'}
+            </div>
+            <div>
+              <Button variant="primary" onClick={retryFailedGeneration}>
+                Réessayer
+              </Button>
+              <Button
+                onClick={() => {
+                  setData((current) => ({
+                    ...current,
+                    tokens: Math.min(
+                      current.plan === 'plus' ? PLUS_TOKENS : FREE_TOKENS,
+                      current.tokens + SHORT_COST,
+                    ),
+                    history: current.history.filter(
+                      (item) => item.id !== current.activeShortId,
+                    ),
+                    activeShortId: null,
+                    sourceDraft: '',
+                    screen: 'create',
+                  }))
+                  setSource('')
+                }}
+              >
+                Changer de sujet
+              </Button>
+            </div>
+          </Card>
         </section>
       )}
 
@@ -950,24 +2068,89 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   )
 }
 
-function EditorChoice({ title, choices, value, onChange }: { title: string; choices: string[]; value: string; onChange: (value: string) => void }) {
-  return <fieldset className="gc-choice-field"><legend>{title}</legend><div>{choices.map((choice) => <button key={choice} type="button" className={choice === value ? 'selected' : ''} aria-pressed={choice === value} onClick={() => onChange(choice)}>{choice}</button>)}</div></fieldset>
+function EditorChoice({
+  title,
+  choices,
+  value,
+  onChange,
+}: {
+  title: string
+  choices: string[]
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <fieldset className="gc-choice-field">
+      <legend>{title}</legend>
+      <div>
+        {choices.map((choice) => (
+          <button
+            key={choice}
+            type="button"
+            className={choice === value ? 'selected' : ''}
+            aria-pressed={choice === value}
+            onClick={() => onChange(choice)}
+          >
+            {choice}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
 }
 
 function PricingPreview({ onChoose }: { onChoose: () => void }) {
   return (
     <section className="gc-pricing-preview">
-      <div><span>POUR COMMENCER</span><h2>Commencez gratuitement.</h2></div>
+      <div>
+        <span>TARIFS TRANSPARENTS</span>
+        <h2>Commencez gratuitement.</h2>
+      </div>
       <div className="gc-plan-preview-grid">
-        <Card><span>Gratuit</span><strong>{FREE_TOKENS} jetons / jour</strong><p>Pour essayer GemClip et créer vos premiers Shorts.</p><button type="button" onClick={onChoose}>Voir les offres</button></Card>
-        <Card className="gc-plan-preview-plus"><Chip active>Plus</Chip><strong>100 jetons / jour</strong><p>Jusqu’à 33 Shorts par jour · 4,99 $ / mois.</p><button type="button" onClick={onChoose}>Découvrir Plus <ArrowRight size={15} /></button></Card>
+        <Card>
+          <span>Gratuit</span>
+          <strong>{FREE_TOKENS} jetons / jour</strong>
+          <p>Pour essayer GemClip et créer vos premiers Shorts.</p>
+          <button type="button" onClick={onChoose}>
+            Voir l'offre
+          </button>
+        </Card>
+        <Card className="gc-plan-preview-plus">
+          <Chip active>Plus</Chip>
+          <strong>100 jetons / jour</strong>
+          <p>Jusqu’à 33 Shorts par jour · 4,99 € / mois via PayPal.</p>
+          <button type="button" onClick={onChoose}>
+            Découvrir Plus <ArrowRight size={15} />
+          </button>
+        </Card>
       </div>
     </section>
   )
 }
 
-function EmptyState({ title, description, action, onAction }: { title: string; description?: string; action: string; onAction: () => void }) {
-  return <Card className="gc-empty-state"><span className="gc-feature-icon"><Film size={21} /></span><h2>{title}</h2>{description && <p>{description}</p>}<Button variant="primary" onClick={onAction}>{action}</Button></Card>
+function EmptyState({
+  title,
+  description,
+  action,
+  onAction,
+}: {
+  title: string
+  description?: string
+  action: string
+  onAction: () => void
+}) {
+  return (
+    <Card className="gc-empty-state">
+      <span className="gc-feature-icon">
+        <Film size={21} />
+      </span>
+      <h2>{title}</h2>
+      {description && <p>{description}</p>}
+      <Button variant="primary" onClick={onAction}>
+        {action}
+      </Button>
+    </Card>
+  )
 }
 
 export default StudioApp

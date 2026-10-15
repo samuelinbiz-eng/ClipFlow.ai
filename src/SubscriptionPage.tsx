@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, Clapperboard, ShieldCheck } from 'lucide-react'
 import type { User } from 'firebase/auth'
-import { getFirebaseAuth } from './firebase'
+import { getFirebaseAuth, getFirebaseFirestore } from './firebase'
+import { doc, setDoc } from 'firebase/firestore'
 import { apiUrl } from './api'
 
 type PayPalConfig = {
@@ -112,6 +113,16 @@ export default function SubscriptionPage({ user }: { user: User }) {
             })
             const result = await response.json()
             if (!response.ok) throw new Error(responseError(result.detail, response.status))
+            try {
+              const db = getFirebaseFirestore()
+              await setDoc(
+                doc(db, 'users', user.uid),
+                { plan: 'plus', updatedAt: new Date().toISOString() },
+                { merge: true },
+              )
+            } catch (firestoreErr) {
+              console.warn('Firestore plan sync warning:', firestoreErr)
+            }
             setMessage('Votre abonnement GemClip est actif. Vous avez maintenant 100 jetons par jour.')
           } catch (verifyError) {
             setError(verifyError instanceof Error ? verifyError.message : 'La vérification PayPal a échoué.')
