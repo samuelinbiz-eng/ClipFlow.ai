@@ -1,0 +1,8 @@
+{
+  "name": "GemClip",
+  "description": "Studio IA pour transformer vos vidéos YouTube en Shorts viraux avec sous-titres animés synchronisés.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic
-python-dotenv
-python-multipart
-groq
-firebase-admin
-psycopg[binary]
-vercel>=0.5.0
