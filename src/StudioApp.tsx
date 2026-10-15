@@ -12,16 +12,18 @@ import {
   Copy,
   Download,
   Film,
+  Flame,
   History,
   ImagePlus,
+  Layers,
   LayoutGrid,
   LoaderCircle,
   LogOut,
   Minus,
-  Music2,
   Play,
   Plus,
   Redo2,
+  RefreshCw,
   Scissors,
   Settings2,
   Share2,
@@ -51,10 +53,128 @@ export const SHORT_COST = 3
 export const PLUS_TOKENS = 100
 export const PLUS_PRICE = 4.99
 
-type MainScreen = 'create' | 'generation' | 'editor' | 'history' | 'account' | 'pricing' | 'error' | 'exhausted'
-type SubtitleStyle = 'Gras' | 'Sobre' | 'Marqué'
-type SubtitleAnimation = 'Aucune' | 'Mot par mot' | 'Pop' | 'Karaoké' | 'Machine à écrire' | 'Glissé'
-type EditorTool = 'Extrait' | 'Sous-titres' | 'Format' | 'Audio' | 'Recadrage' | 'Effets' | 'Titre' | 'Historique'
+export type MainScreen =
+  | 'create'
+  | 'generation'
+  | 'editor'
+  | 'history'
+  | 'account'
+  | 'pricing'
+  | 'error'
+  | 'exhausted'
+
+export type SubtitleStyle = 'Gras' | 'Sobre' | 'Marqué'
+export type SubtitleAnimation = 'Aucune' | 'Mot par mot' | 'Pop' | 'Karaoké' | 'Machine à écrire' | 'Glissé'
+export type EditorTool =
+  | 'Extrait'
+  | 'Sous-titres'
+  | 'Transitions'
+  | 'Format'
+  | 'Audio'
+  | 'Recadrage'
+  | 'Effets'
+  | 'Titre'
+  | 'Historique'
+
+export type TransitionStyle =
+  | 'Pop'
+  | 'Glissé'
+  | 'Fondu'
+  | 'Rebond'
+  | 'Machine à écrire'
+  | 'Flash néon'
+  | 'Bascule 3D'
+  | 'Glitch'
+
+export type TransitionInfo = {
+  id: TransitionStyle
+  name: string
+  slug: string
+  badge: string
+  description: string
+  icon: typeof Sparkles
+  speedDefault: number
+}
+
+export const TRANSITION_LIBRARY: TransitionInfo[] = [
+  {
+    id: 'Pop',
+    name: 'Pop Impact',
+    slug: 'trans-pop',
+    badge: 'TikTok Viral',
+    description: 'Zoom percutant avec pulsation élastique pour un maximum de rétention.',
+    icon: Zap,
+    speedDefault: 0.35,
+  },
+  {
+    id: 'Glissé',
+    name: 'Glissé Vif',
+    slug: 'trans-glisse',
+    badge: 'Reels Rythmé',
+    description: 'Entrée rapide du bas vers le haut avec accélération vive.',
+    icon: ArrowRight,
+    speedDefault: 0.35,
+  },
+  {
+    id: 'Fondu',
+    name: 'Fondu Enchaîné',
+    slug: 'trans-fondu',
+    badge: 'Cinéma & Épuré',
+    description: 'Transition progressive et subtile avec un léger flou de focus.',
+    icon: Sparkles,
+    speedDefault: 0.4,
+  },
+  {
+    id: 'Rebond',
+    name: 'Rebond Élastique',
+    slug: 'trans-rebond',
+    badge: 'Ultra Dynamique',
+    description: 'Effet de rebond avec amorti fluide pour rythmer chaque phrase.',
+    icon: WandSparkles,
+    speedDefault: 0.4,
+  },
+  {
+    id: 'Machine à écrire',
+    name: 'Machine à Écrire',
+    slug: 'trans-machine',
+    badge: 'Cadencé',
+    description: 'Dévoilement mot par mot calé sur le tempo de parole.',
+    icon: Type,
+    speedDefault: 0.45,
+  },
+  {
+    id: 'Flash néon',
+    name: 'Flash Néon',
+    slug: 'trans-flash-neon',
+    badge: 'Impact Lumineux',
+    description: 'Éclair brillant et halo lumineux coloré au changement de section.',
+    icon: Flame,
+    speedDefault: 0.35,
+  },
+  {
+    id: 'Bascule 3D',
+    name: 'Bascule 3D (Flip)',
+    slug: 'trans-bascule-3d',
+    badge: 'Effet 3D',
+    description: 'Rotation tridimensionnelle spectaculaire sur l’axe horizontal.',
+    icon: Layers,
+    speedDefault: 0.4,
+  },
+  {
+    id: 'Glitch',
+    name: 'Cyber Glitch',
+    slug: 'trans-glitch',
+    badge: 'Tech & Moderne',
+    description: 'Décalage numérique rapide et moderne idéal pour les punchlines.',
+    icon: RefreshCw,
+    speedDefault: 0.35,
+  },
+]
+
+export function getTransitionSlug(transition: TransitionStyle): string {
+  const match = TRANSITION_LIBRARY.find((t) => t.id === transition)
+  return match ? match.slug : 'trans-pop'
+}
 
 type SubtitleSettings = {
   style: SubtitleStyle
@@ -70,6 +190,8 @@ type SubtitleSettings = {
   hidePunctuation: boolean
   enabled: boolean
   text: string
+  transition: TransitionStyle
+  transitionSpeed: number
 }
 
 type ShortItem = SubtitleSettings & {
@@ -102,7 +224,7 @@ type StudioState = {
   subtitleDefaults: SubtitleSettings
 }
 
-const STORAGE_KEY = 'gemclip-studio-v2'
+const STORAGE_KEY = 'gemclip-studio-v3'
 const DEFAULT_SUBTITLES: SubtitleSettings = {
   style: 'Gras',
   position: 'Bas',
@@ -116,16 +238,20 @@ const DEFAULT_SUBTITLES: SubtitleSettings = {
   outline: true,
   hidePunctuation: false,
   enabled: true,
-  text: 'Les idées\nprennent vie',
+  text: 'Voici le secret\nque personne ne vous dit\npour percer sur YouTube Shorts',
+  transition: 'Pop',
+  transitionSpeed: 0.35,
 }
+
 const COLORS = ['#93C5FD', '#FDE68A', '#F9A8D4', '#86EFAC']
 const TOOLS: { name: EditorTool; icon: typeof Scissors }[] = [
   { name: 'Extrait', icon: Scissors },
   { name: 'Sous-titres', icon: Subtitles },
+  { name: 'Transitions', icon: WandSparkles },
   { name: 'Format', icon: Smartphone },
   { name: 'Audio', icon: AudioLines },
   { name: 'Recadrage', icon: LayoutGrid },
-  { name: 'Effets', icon: WandSparkles },
+  { name: 'Effets', icon: Sparkles },
   { name: 'Titre', icon: Type },
   { name: 'Historique', icon: History },
 ]
@@ -209,7 +335,7 @@ function Card({ children, className = '' }: { children: ReactNode; className?: s
 function TokenPill({ tokens }: { tokens: number }) {
   return (
     <span className="gc-token-pill">
-      <Zap size={16} strokeWidth={2} />
+      <Zap size={15} strokeWidth={2.2} />
       <strong>{tokens}</strong>
       <span>/ 100 jetons</span>
     </span>
@@ -250,16 +376,23 @@ function PhonePreview({
   variant = 'default',
   settings = DEFAULT_SUBTITLES,
   subtitle = true,
+  activeSectionIndex = 0,
+  isTransitioning = false,
 }: {
   caption?: string
   variant?: 'default' | 'empty'
   settings?: SubtitleSettings
   subtitle?: boolean
+  activeSectionIndex?: number
+  isTransitioning?: boolean
 }) {
   const isOutfit = settings.font === 'Outfit'
-  const lines = caption.split('\n').filter(Boolean)
+  const sections = caption.split('\n').filter(Boolean)
+  const currentSection =
+    sections.length > 0 ? sections[activeSectionIndex % sections.length] : caption
   const positionClass = `pos-${settings.position.toLowerCase()}`
   const styleClass = `style-${settings.style.toLowerCase()}`
+  const transitionClass = getTransitionSlug(settings.transition || 'Pop')
 
   return (
     <div className={`gc-phone ${variant === 'empty' ? 'is-empty' : ''}`} aria-hidden="true">
@@ -274,33 +407,30 @@ function PhonePreview({
               <Sparkles size={28} />
             </div>
           )}
-          {subtitle && lines.length > 0 && variant !== 'empty' && (
+          {subtitle && currentSection && variant !== 'empty' && (
             <div
+              key={`${currentSection}-${activeSectionIndex}-${isTransitioning ? 'trans' : 'still'}`}
               className={`gc-phone-subtitles ${positionClass} ${styleClass} ${
                 isOutfit ? 'font-outfit' : ''
-              }`}
+              } ${isTransitioning ? `trans-animating ${transitionClass}` : ''}`}
               style={
                 {
                   '--sub-size': `${settings.size}px`,
                   '--sub-color': settings.color,
+                  '--trans-speed': `${settings.transitionSpeed || 0.35}s`,
                   fontFamily: `${settings.font}, sans-serif`,
                 } as CSSProperties
               }
             >
-              {lines.map((line, idx) => (
-                <span
-                  key={`${line}-${idx}`}
-                  className={`gc-sub-line ${settings.outline ? 'has-outline' : ''}`}
-                >
-                  {settings.highlightedWords && idx === 0 ? (
-                    <mark style={{ backgroundColor: 'transparent', color: settings.color }}>
-                      {line}
-                    </mark>
-                  ) : (
-                    line
-                  )}
-                </span>
-              ))}
+              <span className={`gc-sub-line ${settings.outline ? 'has-outline' : ''}`}>
+                {settings.highlightedWords ? (
+                  <mark style={{ backgroundColor: 'transparent', color: settings.color }}>
+                    {currentSection}
+                  </mark>
+                ) : (
+                  currentSection
+                )}
+              </span>
             </div>
           )}
         </div>
@@ -312,11 +442,19 @@ function PhonePreview({
 function Header({
   user,
   tokens,
+  plan,
+  screen,
+  hasActiveShort,
+  historyCount,
   onNavigate,
   apiStatus,
 }: {
   user: User
   tokens: number
+  plan: 'free' | 'plus'
+  screen: MainScreen
+  hasActiveShort: boolean
+  historyCount: number
   onNavigate: (screen: MainScreen) => void
   apiStatus: { groqConfigured: boolean; groqModel: string; paypalConfigured: boolean } | null
 }) {
@@ -330,39 +468,97 @@ function Header({
 
   return (
     <header className="gc-header">
-      <a className="gc-brand" href="/" aria-label="GemClip, accueil">
+      <button
+        type="button"
+        className="gc-brand"
+        onClick={() => onNavigate('create')}
+        aria-label="Accueil GemClip"
+        style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: 0 }}
+      >
         <span className="gc-brand-mark">
           <Clapperboard size={19} strokeWidth={2} />
         </span>
         GemClip
-      </a>
-      <span className="gc-prototype-badge">
-        <Sparkles size={13} />{' '}
+      </button>
+
+      <span className="gc-api-pill" title="Moteur IA connecté">
+        <span
+          className="dot"
+          style={{
+            backgroundColor: apiStatus?.groqConfigured ? '#22c55e' : '#f59e0b',
+            boxShadow: apiStatus?.groqConfigured
+              ? '0 0 6px rgba(34, 197, 94, 0.6)'
+              : '0 0 6px rgba(245, 158, 11, 0.6)',
+          }}
+        />
         {apiStatus?.groqConfigured
           ? `Groq IA (${apiStatus.groqModel})`
           : 'Groq IA · Mode Démo'}
       </span>
+
       <nav className="gc-desktop-nav" aria-label="Navigation principale">
-        <button type="button" onClick={() => onNavigate('create')}>
-          Créer
+        <button
+          type="button"
+          className={screen === 'create' ? 'is-active' : ''}
+          onClick={() => onNavigate('create')}
+        >
+          <Plus size={14} /> Créer
         </button>
-        <button type="button" onClick={() => onNavigate('history')}>
-          Historique
+        {hasActiveShort && (
+          <button
+            type="button"
+            className={screen === 'editor' ? 'is-active' : ''}
+            onClick={() => onNavigate('editor')}
+          >
+            <Scissors size={14} /> Éditeur
+          </button>
+        )}
+        <button
+          type="button"
+          className={screen === 'history' ? 'is-active' : ''}
+          onClick={() => onNavigate('history')}
+        >
+          <History size={14} /> Historique
+          {historyCount > 0 && <span className="badge">{historyCount}</span>}
         </button>
-        <button type="button" onClick={() => onNavigate('pricing')}>
-          Abonnement
+        <button
+          type="button"
+          className={screen === 'pricing' ? 'is-active' : ''}
+          onClick={() => onNavigate('pricing')}
+        >
+          <Zap size={14} /> Tarifs & Plus
+        </button>
+        <button
+          type="button"
+          className={screen === 'account' ? 'is-active' : ''}
+          onClick={() => onNavigate('account')}
+        >
+          <Settings2 size={14} /> Compte
         </button>
       </nav>
+
       <div className="gc-header-actions">
-        <Button className="gc-subscribe-button" onClick={() => onNavigate('pricing')}>
-          Abonnement
-        </Button>
+        {plan === 'free' ? (
+          <Button
+            className="gc-subscribe-button"
+            onClick={() => onNavigate('pricing')}
+            style={{ padding: '0 12px', minHeight: 36, fontSize: '11px' }}
+          >
+            <Zap size={14} /> Passer à Plus
+          </Button>
+        ) : (
+          <Chip active>Plan Plus</Chip>
+        )}
         <TokenPill tokens={tokens} />
         <button
-          className="gc-avatar"
+          className={`gc-avatar ${screen === 'account' ? 'selected' : ''}`}
           type="button"
           onClick={() => onNavigate('account')}
           aria-label="Ouvrir le compte"
+          style={{
+            outline: screen === 'account' ? '2px solid var(--gc-blue)' : 'none',
+            outlineOffset: '2px',
+          }}
         >
           {user.photoURL && !avatarError ? (
             <img src={user.photoURL} alt="" onError={() => setAvatarError(true)} />
@@ -391,6 +587,14 @@ function BottomNavigation({
       >
         <Plus size={19} />
         <span>Créer</span>
+      </button>
+      <button
+        className={screen === 'editor' ? 'active' : ''}
+        type="button"
+        onClick={() => onNavigate('editor')}
+      >
+        <Scissors size={19} />
+        <span>Éditeur</span>
       </button>
       <button
         className={screen === 'history' ? 'active' : ''}
@@ -473,16 +677,17 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   )
   const [storageWarning, setStorageWarning] = useState(initial.warning)
   const [notice, setNotice] = useState('')
-  const [editorTool, setEditorTool] = useState<EditorTool>('Sous-titres')
+  const [editorTool, setEditorTool] = useState<EditorTool>('Transitions')
   const [source, setSource] = useState(data.sourceDraft)
   const [fileName, setFileName] = useState('')
   const [busy, setBusy] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [playhead, setPlayhead] = useState(12)
-  const [musicAdded, setMusicAdded] = useState(false)
   const [showCustomize, setShowCustomize] = useState(false)
   const [settingsUndo, setSettingsUndo] = useState<SubtitleSettings[]>([])
   const [settingsRedo, setSettingsRedo] = useState<SubtitleSettings[]>([])
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0)
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const [apiStatus, setApiStatus] = useState<{
     groqConfigured: boolean
     groqModel: string
@@ -491,11 +696,39 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   const lastResetRef = useRef(data.lastResetDay)
   const abortController = useRef<AbortController | null>(null)
   const runningId = useRef<string | null>(null)
+  const transitionTimer = useRef<number | null>(null)
 
   const activeShort = useMemo(
     () => data.history.find((item) => item.id === data.activeShortId) ?? null,
     [data.history, data.activeShortId],
   )
+
+  // Subtitle sections computed from text lines
+  const subtitleSections = useMemo(() => {
+    if (!activeShort) return []
+    return activeShort.text.split('\n').filter(Boolean)
+  }, [activeShort?.text])
+
+  // Function to trigger live transition preview
+  const triggerTransition = (targetIndex?: number) => {
+    if (transitionTimer.current) window.clearTimeout(transitionTimer.current)
+    setIsTransitioning(false)
+    if (typeof targetIndex === 'number') {
+      setActiveSectionIndex(targetIndex)
+    } else {
+      setActiveSectionIndex((curr) =>
+        subtitleSections.length > 0 ? (curr + 1) % subtitleSections.length : 0,
+      )
+    }
+    // Small timeout to allow re-trigger of CSS animation
+    window.setTimeout(() => {
+      setIsTransitioning(true)
+      const durationMs = (activeShort?.transitionSpeed || 0.35) * 1000 + 100
+      transitionTimer.current = window.setTimeout(() => {
+        setIsTransitioning(false)
+      }, durationMs)
+    }, 10)
+  }
 
   // 1. Fetch Backend API Keys Status (Groq & PayPal)
   useEffect(() => {
@@ -538,9 +771,10 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
             position: (e.subtitle_position as any) || current.subtitleDefaults.position,
             font: (e.subtitle_font as any) || current.subtitleDefaults.font,
             text: e.explication || current.subtitleDefaults.text,
+            transition: current.subtitleDefaults.transition,
+            transitionSpeed: current.subtitleDefaults.transitionSpeed,
           }))
 
-          // Merge: keep active generating items first, then synced items from Firestore
           const uniqueGenerating = currentGenerating.filter((g) => !existingIds.has(g.id))
           return {
             ...current,
@@ -655,7 +889,6 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
           subtitle_color: activeShort.color,
           subtitle_size: String(activeShort.size),
           subtitle_position: activeShort.position,
-          subtitle_font: activeShort.font,
           credit_cost: SHORT_COST,
           owner_uid: user.uid,
         })
@@ -713,7 +946,6 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       subtitle_color: values.color ?? activeShort.color,
       subtitle_size: String(values.size ?? activeShort.size),
       subtitle_position: values.position ?? activeShort.position,
-      subtitle_font: values.font ?? activeShort.font,
       subtitles: values.enabled ?? activeShort.enabled,
       duration_seconds: values.durationSeconds ?? activeShort.durationSeconds,
     })
@@ -851,7 +1083,6 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       subtitle_color: copy.color,
       subtitle_size: String(copy.size),
       subtitle_position: copy.position,
-      subtitle_font: copy.font,
       credit_cost: 0,
       owner_uid: user.uid,
     })
@@ -885,8 +1116,9 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         `Titre : ${activeShort.title}\n`,
         `Format : 9:16 Vertical (${data.resolution}p)\n`,
         `Durée : ${activeShort.durationSeconds} secondes\n`,
-        `Police : ${activeShort.font} | Couleur : ${activeShort.color} | Style : ${activeShort.style}\n\n`,
-        `SOUS-TITRES SYNCHRONISÉS :\n${activeShort.text}\n\n`,
+        `Police : ${activeShort.font} | Couleur : ${activeShort.color} | Style : ${activeShort.style}\n`,
+        `Animation de transition : ${activeShort.transition} (${activeShort.transitionSpeed}s)\n\n`,
+        `SECTIONS DE SOUS-TITRES SYNCHRONISÉES :\n${activeShort.text}\n\n`,
         `Tags : #Shorts #YouTubeShorts #Reels #TikTok\n`,
       ],
       { type: 'text/plain;charset=utf-8' },
@@ -918,6 +1150,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         hidePunctuation: activeShort.hidePunctuation,
         enabled: activeShort.enabled,
         text: activeShort.text,
+        transition: activeShort.transition,
+        transitionSpeed: activeShort.transitionSpeed,
       }
       setSettingsUndo((current) => [...current.slice(-19), snapshot])
       setSettingsRedo([])
@@ -928,53 +1162,20 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   function undoSubtitleSettings() {
     if (settingsUndo.length === 0 || !activeShort) return
     const previous = settingsUndo[settingsUndo.length - 1]
-    const current: SubtitleSettings = {
-      style: activeShort.style,
-      position: activeShort.position,
-      size: activeShort.size,
-      color: activeShort.color,
-      animation: activeShort.animation,
-      animationSpeed: activeShort.animationSpeed,
-      font: activeShort.font,
-      highlightedWords: activeShort.highlightedWords,
-      automaticEmojis: activeShort.automaticEmojis,
-      outline: activeShort.outline,
-      hidePunctuation: activeShort.hidePunctuation,
-      enabled: activeShort.enabled,
-      text: activeShort.text,
-    }
-    setSettingsRedo((items) => [...items.slice(-19), current])
-    setSettingsUndo((items) => items.slice(0, -1))
     updateActiveShort(previous)
+    setSettingsUndo((items) => items.slice(0, -1))
   }
 
   function redoSubtitleSettings() {
     if (settingsRedo.length === 0 || !activeShort) return
     const next = settingsRedo[settingsRedo.length - 1]
-    const current: SubtitleSettings = {
-      style: activeShort.style,
-      position: activeShort.position,
-      size: activeShort.size,
-      color: activeShort.color,
-      animation: activeShort.animation,
-      animationSpeed: activeShort.animationSpeed,
-      font: activeShort.font,
-      highlightedWords: activeShort.highlightedWords,
-      automaticEmojis: activeShort.automaticEmojis,
-      outline: activeShort.outline,
-      hidePunctuation: activeShort.hidePunctuation,
-      enabled: activeShort.enabled,
-      text: activeShort.text,
-    }
-    setSettingsUndo((items) => [...items.slice(-19), current])
-    setSettingsRedo((items) => items.slice(0, -1))
     updateActiveShort(next)
+    setSettingsRedo((items) => items.slice(0, -1))
   }
 
   async function upgradePlan() {
     setBusy(true)
     try {
-      // Direct upgrade to Plus with Firestore synchronization
       const db = getFirebaseFirestore()
       await setDoc(
         doc(db, 'users', user.uid),
@@ -1020,12 +1221,17 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   }
 
   const profileName = user.displayName || user.email?.split('@')[0] || 'Créateur GemClip'
+  const isEditorMode = data.screen === 'editor'
 
   return (
-    <main className="gc-app">
+    <main className={`gc-app ${isEditorMode ? 'gc-app-editor-mode' : ''}`}>
       <Header
         user={user}
         tokens={data.tokens}
+        plan={data.plan}
+        screen={data.screen}
+        hasActiveShort={Boolean(activeShort)}
+        historyCount={data.history.length}
         onNavigate={navigate}
         apiStatus={apiStatus}
       />
@@ -1058,8 +1264,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 <span>Un Short.</span>
               </h1>
               <p className="gc-lead">
-                Collez un lien YouTube ou indiquez votre idée. L’IA Groq extrait le moment fort et
-                GemClip crée les sous-titres animés.
+                Collez un lien YouTube ou écrivez votre sujet. L’IA Groq extrait le moment fort et
+                GemClip crée les sous-titres animés avec transitions percutantes.
               </p>
               <Card className="gc-create-card">
                 <form onSubmit={startGeneration}>
@@ -1071,7 +1277,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       id="gc-source"
                       type="text"
                       value={source}
-                      placeholder="https://youtube.com/watch?v=... ou « 3 secrets pour réussir en e-commerce »"
+                      placeholder="https://youtube.com/watch?v=... ou « Les 3 secrets du dropshipping »"
                       onChange={(event) => setSource(event.target.value)}
                       disabled={Boolean(fileName)}
                     />
@@ -1230,28 +1436,23 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       </div>
                     </div>
                     <label className="gc-select-label">
-                      Animation
+                      Animation de transition
                       <select
-                        value={data.subtitleDefaults.animation}
+                        value={data.subtitleDefaults.transition}
                         onChange={(event) =>
                           setData((current) => ({
                             ...current,
                             subtitleDefaults: {
                               ...current.subtitleDefaults,
-                              animation: event.target.value as SubtitleAnimation,
+                              transition: event.target.value as TransitionStyle,
                             },
                           }))
                         }
                       >
-                        {[
-                          'Aucune',
-                          'Mot par mot',
-                          'Pop',
-                          'Karaoké',
-                          'Machine à écrire',
-                          'Glissé',
-                        ].map((value) => (
-                          <option key={value}>{value}</option>
+                        {TRANSITION_LIBRARY.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.badge})
+                          </option>
                         ))}
                       </select>
                     </label>
@@ -1318,7 +1519,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
             <strong>Facebook Reels</strong>
           </section>
 
-          <section className="gc-features-section">
+          <section className="gc-features-section" id="features">
             <div className="gc-section-heading">
               <span>LE STUDIO SHORTS</span>
               <h2>Tout ce qu’il faut, rien de plus.</h2>
@@ -1333,10 +1534,10 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
               </Card>
               <Card>
                 <span className="gc-feature-icon">
-                  <Subtitles size={20} />
+                  <WandSparkles size={20} />
                 </span>
-                <h3>Sous-titres animés</h3>
-                <p>Styles viraux, polices percutantes (Outfit, Anton), mots-clés surlignés.</p>
+                <h3>Transitions de Sous-titres</h3>
+                <p>Bibliothèque de 8 transitions exclusives (Pop Impact, Glissé, Rebond, Flash Néon).</p>
               </Card>
               <Card>
                 <span className="gc-feature-icon">
@@ -1348,7 +1549,9 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
             </div>
           </section>
           <PricingPreview onChoose={() => navigate('pricing')} />
-          <footer className="gc-footer">GemClip <span>·</span> YouTube vers Shorts avec Groq, PayPal & Firestore.</footer>
+          <footer className="gc-footer">
+            GemClip <span>·</span> YouTube vers Shorts avec Groq, PayPal & Firestore.
+          </footer>
         </>
       )}
 
@@ -1373,7 +1576,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 'Vidéo récupérée',
                 'Contenu transcrit',
                 'Analyse Groq IA & moment clé',
-                'Sous-titres synchronisés',
+                'Sous-titres & transitions configurées',
                 'Short prêt',
               ].map((step, index) => {
                 const currentIndex =
@@ -1410,11 +1613,13 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
           <section className="gc-editor">
             <header className="gc-editor-topbar">
               <Button onClick={() => navigate('create')}>
-                <ArrowLeft size={16} /> Retour
+                <ArrowLeft size={15} /> Retour
               </Button>
               <div className="gc-editor-name">
                 <strong>{activeShort.title || 'Mon Short'}</strong>
-                <span>Enregistré dans Cloud Firestore</span>
+                <span>
+                  Synchronisé Firestore · Transition : <strong>{activeShort.transition || 'Pop'}</strong>
+                </span>
               </div>
               <TokenPill tokens={data.tokens} />
               <div className="gc-undo-actions">
@@ -1423,20 +1628,21 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                   onClick={undoSubtitleSettings}
                   disabled={settingsUndo.length === 0}
                 >
-                  <Undo2 size={17} />
+                  <Undo2 size={16} />
                 </Button>
                 <Button
                   aria-label="Rétablir"
                   onClick={redoSubtitleSettings}
                   disabled={settingsRedo.length === 0}
                 >
-                  <Redo2 size={17} />
+                  <Redo2 size={16} />
                 </Button>
               </div>
               <Button variant="primary" onClick={downloadShortDetails}>
-                <Download size={16} /> Exporter
+                <Download size={15} /> Exporter
               </Button>
             </header>
+
             <div className="gc-editor-main">
               <nav className="gc-tool-rail" aria-label="Outils de montage">
                 {TOOLS.map(({ name, icon: Icon }) => (
@@ -1449,61 +1655,176 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       if (name === 'Historique') navigate('history')
                     }}
                   >
-                    <Icon size={18} strokeWidth={2} />
+                    <Icon size={17} strokeWidth={2} />
                     <span>{name}</span>
                   </button>
                 ))}
               </nav>
+
               <section className="gc-editor-canvas">
                 <div className="gc-canvas-toolbar">
                   <span>
                     Aperçu interactif <Chip>9:16</Chip>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPlayhead((p) =>
-                        p >= activeShort.durationSeconds ? 0 : p + 5,
-                      )
-                    }
-                    aria-label="Avancer la vidéo"
-                  >
-                    <Play size={17} fill="currentColor" />
-                  </button>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <Button
+                      variant="primary"
+                      onClick={() => triggerTransition()}
+                      style={{ padding: '0 10px', minHeight: 30, fontSize: '10px' }}
+                    >
+                      <Sparkles size={13} /> Tester transition
+                    </Button>
+                  </div>
                 </div>
+
                 <PhonePreview
                   caption={activeShort.text}
                   settings={activeShort}
                   subtitle={activeShort.enabled}
+                  activeSectionIndex={activeSectionIndex}
+                  isTransitioning={isTransitioning}
                 />
+
                 <div className="gc-player-controls">
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
                       setPlayhead((time) =>
                         time >= activeShort.durationSeconds ? 0 : time + 1,
                       )
-                    }
-                    aria-label="Lecture"
+                      triggerTransition()
+                    }}
+                    aria-label="Lecture & transition"
                   >
-                    <Play size={15} fill="currentColor" />
+                    <Play size={14} fill="currentColor" />
                   </button>
                   <span>
                     00:{String(playhead).padStart(2, '0')} / 00:
                     {String(activeShort.durationSeconds).padStart(2, '0')}
                   </span>
-                  <Chip active>Vertical 9:16</Chip>
+                  <Chip active>
+                    Section {activeSectionIndex + 1}/{Math.max(1, subtitleSections.length)} ·{' '}
+                    {activeShort.transition || 'Pop'}
+                  </Chip>
                   <button
                     type="button"
                     onClick={() => void shareShort()}
                     aria-label="Partager"
                   >
-                    <Share2 size={15} />
+                    <Share2 size={14} />
                   </button>
                 </div>
               </section>
+
               <aside className="gc-editor-panel">
-                {editorTool === 'Sous-titres' ? (
+                {/* TOOL: TRANSITIONS (DEDICATED LIBRARY) */}
+                {editorTool === 'Transitions' ? (
+                  <>
+                    <div className="gc-panel-heading">
+                      <div>
+                        <span>BIBLIOTHÈQUE D'ANIMATIONS</span>
+                        <h2>Transitions de texte</h2>
+                      </div>
+                    </div>
+
+                    <p style={{ margin: '0 0 10px', fontSize: '11px', color: 'var(--gc-secondary)', lineHeight: 1.45 }}>
+                      Animez le passage d’une phrase à l’autre pour dynamiser le rythme de votre Short.
+                    </p>
+
+                    <Button
+                      variant="primary"
+                      onClick={() => triggerTransition()}
+                      style={{ width: '100%', minHeight: 36, marginBottom: '12px', fontSize: '11px' }}
+                    >
+                      <Play size={14} fill="currentColor" /> Tester l’animation sélectionnée
+                    </Button>
+
+                    <div className="gc-transition-library-header">
+                      <h3>Styles de transition disponibles</h3>
+                      <Chip>{TRANSITION_LIBRARY.length} styles</Chip>
+                    </div>
+
+                    <div className="gc-transition-grid">
+                      {TRANSITION_LIBRARY.map((t) => {
+                        const Icon = t.icon
+                        const isSelected = (activeShort.transition || 'Pop') === t.id
+                        return (
+                          <div
+                            key={t.id}
+                            className={`gc-transition-card ${isSelected ? 'selected' : ''}`}
+                            onClick={() => {
+                              updateSubtitle('transition', t.id)
+                              updateSubtitle('transitionSpeed', t.speedDefault)
+                              triggerTransition()
+                            }}
+                          >
+                            <div className="gc-transition-card-head">
+                              <Icon size={16} />
+                              <span className="badge">{t.badge}</span>
+                            </div>
+                            <strong>{t.name}</strong>
+                            <p>{t.description}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <label className="gc-slider-label" style={{ marginTop: '16px' }}>
+                      Vitesse de transition <span>{(activeShort.transitionSpeed || 0.35).toFixed(2)}s</span>
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="0.8"
+                        step="0.05"
+                        value={activeShort.transitionSpeed || 0.35}
+                        onChange={(event) =>
+                          updateSubtitle('transitionSpeed', Number(event.target.value))
+                        }
+                      />
+                    </label>
+
+                    {/* SECTIONS MANAGER */}
+                    <div className="gc-section-manager">
+                      <div className="gc-section-manager-head">
+                        <strong>Sections de texte ({subtitleSections.length})</strong>
+                        <span style={{ fontSize: '9px', color: 'var(--gc-muted)' }}>
+                          Cliquez pour tester
+                        </span>
+                      </div>
+                      {subtitleSections.map((sec, idx) => (
+                        <div
+                          key={`${sec}-${idx}`}
+                          className="gc-section-item"
+                          onClick={() => triggerTransition(idx)}
+                          style={{
+                            cursor: 'pointer',
+                            borderColor: activeSectionIndex === idx ? 'var(--gc-blue)' : undefined,
+                            backgroundColor:
+                              activeSectionIndex === idx ? 'var(--gc-blue-soft)' : '#fff',
+                          }}
+                        >
+                          <span className="gc-section-num">{idx + 1}</span>
+                          <span className="gc-section-text">{sec}</span>
+                          <span className="gc-section-trans-badge">
+                            ⚡ {activeShort.transition || 'Pop'}
+                          </span>
+                        </div>
+                      ))}
+                      <Button
+                        style={{ minHeight: 32, fontSize: '10px', marginTop: '4px' }}
+                        onClick={() => {
+                          const updated = window.prompt(
+                            'Modifier les sections de sous-titres (1 phrase par ligne)',
+                            activeShort.text,
+                          )
+                          if (updated !== null) updateSubtitle('text', updated)
+                        }}
+                      >
+                        Modifier ou découper les phrases
+                      </Button>
+                    </div>
+                  </>
+                ) : editorTool === 'Sous-titres' ? (
                   <>
                     <div className="gc-panel-heading">
                       <div>
@@ -1516,6 +1837,37 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       checked={activeShort.enabled}
                       onChange={(value) => updateSubtitle('enabled', value)}
                     />
+
+                    {/* Quick Access to Transition Library */}
+                    <div
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        background: 'var(--gc-blue-soft)',
+                        border: '1px solid #bfdbfe',
+                        marginTop: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div>
+                        <strong style={{ fontSize: '11px', color: '#1e40af', display: 'block' }}>
+                          Transition : {activeShort.transition || 'Pop'}
+                        </strong>
+                        <span style={{ fontSize: '9px', color: '#3b82f6' }}>
+                          {(activeShort.transitionSpeed || 0.35).toFixed(2)}s entre chaque section
+                        </span>
+                      </div>
+                      <Button
+                        variant="primary"
+                        style={{ padding: '0 8px', minHeight: 28, fontSize: '9px' }}
+                        onClick={() => setEditorTool('Transitions')}
+                      >
+                        Bibliothèque →
+                      </Button>
+                    </div>
+
                     <EditorChoice
                       title="Style"
                       choices={['Gras', 'Sobre', 'Marqué']}
@@ -1559,29 +1911,6 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       </div>
                     </div>
                     <label className="gc-select-label">
-                      Animation
-                      <select
-                        value={activeShort.animation}
-                        onChange={(event) =>
-                          updateSubtitle(
-                            'animation',
-                            event.target.value as SubtitleAnimation,
-                          )
-                        }
-                      >
-                        {[
-                          'Aucune',
-                          'Mot par mot',
-                          'Pop',
-                          'Karaoké',
-                          'Machine à écrire',
-                          'Glissé',
-                        ].map((value) => (
-                          <option key={value}>{value}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="gc-select-label">
                       Police
                       <select
                         value={activeShort.font}
@@ -1612,7 +1941,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                       <Button
                         onClick={() => {
                           const editedText = window.prompt(
-                            'Modifier le texte des sous-titres',
+                            'Modifier le texte des sous-titres (sautez une ligne pour séparer les sections)',
                             activeShort.text,
                           )
                           if (editedText !== null) updateSubtitle('text', editedText)
@@ -1653,7 +1982,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                   <div className="gc-tool-placeholder">
                     <Smartphone size={21} />
                     <h2>Format Vertical</h2>
-                    <p>Format vertical 9:16 standard pour Shorts & Reels · {data.resolution}p</p>
+                    <p>Format vertical 9:16 standard pour Shorts, TikTok & Reels · {data.resolution}p</p>
                     <Chip active>9:16 Plein écran</Chip>
                   </div>
                 ) : (
@@ -1665,6 +1994,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 )}
               </aside>
             </div>
+
+            {/* DOCKED TIMELINE - COMPACT ZERO SCROLL */}
             <section className="gc-timeline">
               <div className="gc-timeline-actions">
                 <Button
@@ -1674,10 +2005,13 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                     })
                   }
                 >
-                  <Scissors size={15} /> -5s
+                  <Scissors size={13} /> -5s
                 </Button>
                 <Button onClick={duplicateShort}>
-                  <Copy size={15} /> Dupliquer
+                  <Copy size={13} /> Dupliquer
+                </Button>
+                <Button onClick={() => triggerTransition()}>
+                  <Sparkles size={13} /> Transition : {activeShort.transition || 'Pop'}
                 </Button>
                 <span className="gc-zoom-actions">
                   <button
@@ -1685,7 +2019,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                     aria-label="Zoom arrière"
                     onClick={() => setZoom((value) => Math.max(0.7, value - 0.1))}
                   >
-                    <Minus size={15} />
+                    <Minus size={13} />
                   </button>
                   <span>{Math.round(zoom * 100)}%</span>
                   <button
@@ -1693,10 +2027,11 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                     aria-label="Zoom avant"
                     onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))}
                   >
-                    <Plus size={15} />
+                    <Plus size={13} />
                   </button>
                 </span>
               </div>
+
               <div className="gc-time-ruler">
                 <span>00:00</span>
                 <span>00:10</span>
@@ -1704,60 +2039,40 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 <span>00:30</span>
                 <span>00:40</span>
               </div>
-              <div className="gc-track-row">
-                <span>Vidéo</span>
-                <div className="gc-video-track">
-                  <span
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        (activeShort.durationSeconds / 60) * 100,
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
+
               <div className="gc-track-row">
                 <span>Sous-titres</span>
                 <div className="gc-caption-track">
-                  {activeShort.text
-                    .split('\n')
-                    .filter(Boolean)
-                    .slice(0, 4)
-                    .map((line, index) => (
-                      <span key={`${line}-${index}`}>{line}</span>
-                    ))}
+                  {subtitleSections.map((line, index) => (
+                    <span
+                      key={`${line}-${index}`}
+                      onClick={() => triggerTransition(index)}
+                      style={{
+                        cursor: 'pointer',
+                        borderColor: activeSectionIndex === index ? 'var(--gc-blue)' : undefined,
+                        backgroundColor:
+                          activeSectionIndex === index ? 'var(--gc-blue-soft)' : undefined,
+                        fontWeight: activeSectionIndex === index ? 750 : undefined,
+                      }}
+                      title="Cliquer pour prévisualiser la transition"
+                    >
+                      {index > 0 && (
+                        <span className="gc-transition-connector">
+                          ⚡ {activeShort.transition || 'Pop'}
+                        </span>
+                      )}{' '}
+                      {line}
+                    </span>
+                  ))}
                   <button
                     type="button"
-                    onClick={() =>
-                      updateSubtitle('text', `${activeShort.text}\nNouveau moment fort`)
-                    }
+                    onClick={() => setEditorTool('Transitions')}
                   >
-                    + Ajouter une ligne
+                    + Transitions ({activeShort.transition || 'Pop'})
                   </button>
                 </div>
               </div>
-              <div className="gc-track-row">
-                <span>Musique</span>
-                <button
-                  className="gc-music-track"
-                  type="button"
-                  onClick={() => setMusicAdded((value) => !value)}
-                >
-                  <Music2 size={15} />{' '}
-                  {musicAdded
-                    ? 'Piste audio synchronisée'
-                    : 'Ajouter une ambiance musicale libre de droits'}{' '}
-                  <Plus size={14} />
-                </button>
-              </div>
             </section>
-            <div className="gc-export-footer">
-              <span>Short synchronisé dans Firestore · Prêt à exporter</span>
-              <Button variant="primary" onClick={downloadShortDetails}>
-                <Download size={16} /> Télécharger le Short
-              </Button>
-            </div>
           </section>
         ) : (
           <EmptyState
@@ -1923,7 +2238,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       )}
 
       {data.screen === 'pricing' && (
-        <section className="gc-pricing-page">
+        <section className="gc-pricing-page" id="pricing">
           <div className="gc-pricing-hero">
             <Chip>
               <Zap size={14} /> GEMCLIP PLUS
@@ -1948,6 +2263,9 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                   <Check size={16} /> Sous-titres animés 9:16
                 </li>
                 <li>
+                  <Check size={16} /> Bibliothèque de transitions
+                </li>
+                <li>
                   <Check size={16} /> Sauvegarde Cloud Firestore
                 </li>
               </ul>
@@ -1965,7 +2283,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                   <Check size={16} /> Analyse Groq IA illimitée
                 </li>
                 <li>
-                  <Check size={16} /> Toutes les animations et polices
+                  <Check size={16} /> Toutes les transitions (Pop, Glitch, 3D...)
                 </li>
                 <li>
                   <Check size={16} /> Export 1080p haute définition
@@ -1990,8 +2308,8 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 <span>jetons chaque jour</span>
               </Card>
               <Card>
-                <strong>6</strong>
-                <span>styles d’animation</span>
+                <strong>8</strong>
+                <span>animations de transition</span>
               </Card>
               <Card>
                 <strong>1080p</strong>

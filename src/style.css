@@ -8,6 +8,7 @@
 @import "./styles/theme-overrides.css";
 @import "./styles/screen-states.css";
 @import "./styles/gemclip.css";
+@import "./styles/transitions.css";
 @font-face {
   font-family: 'Outfit';
   src: url('./assets/Outfit-VariableFont_wght.ttf') format('truetype');

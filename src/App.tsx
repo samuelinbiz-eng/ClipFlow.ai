@@ -22,7 +22,12 @@ function HomePage() {
           <span className="brand-mark"><Clapperboard size={19} /></span>
           <span>GemClip</span>
         </a>
+        <span className="gc-api-pill">
+          <span className="dot" /> Groq IA & Firestore
+        </span>
         <nav className="landing-nav-actions" aria-label="Navigation principale">
+          <a className="landing-login" href="#features">Fonctionnalités</a>
+          <a className="landing-login" href="#pricing">Tarifs</a>
           <a className="landing-login" href="/login">Connexion</a>
           <a className="landing-signup" href="/register">Créer un compte <ArrowUpRight size={15} /></a>
         </nav>
@@ -75,7 +80,7 @@ function HomePage() {
         <strong>Facebook Reels</strong>
       </section>
 
-      <section className="landing-product-features" aria-labelledby="landing-features-title">
+      <section className="landing-product-features" id="features" aria-labelledby="landing-features-title">
         <h2 id="landing-features-title">Simple, rapide, connecté.</h2>
         <div className="landing-features">
           <article><div><strong>Extraction Groq LLaMA</strong><p>Groq analyse la vidéo et identifie le passage le plus captivant pour les Shorts.</p></div></article>
@@ -84,7 +89,7 @@ function HomePage() {
         </div>
       </section>
 
-      <section className="landing-pricing" aria-labelledby="landing-pricing-title">
+      <section className="landing-pricing" id="pricing" aria-labelledby="landing-pricing-title">
         <h2 id="landing-pricing-title">Commencez dès aujourd'hui.</h2>
         <div className="landing-plan-grid">
           <article className="landing-plan-card">

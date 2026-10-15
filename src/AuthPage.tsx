@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowRight, Clapperboard, LoaderCircle, LockKeyhole, Mail, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Clapperboard, LoaderCircle, LockKeyhole, Mail, Sparkles } from 'lucide-react'
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -100,12 +100,15 @@ export default function AuthPage({ mode }: AuthPageProps) {
           <span>GemClip</span>
         </a>
         <span className="local-badge"><span className="live-dot" /> Espace sécurisé</span>
+        <a className="subscription-back" href="/" style={{ marginLeft: 'auto' }}>
+          <ArrowLeft size={14} /> Accueil
+        </a>
       </header>
 
       <section className="auth-content">
         <article className="auth-card">
           <span className="auth-icon"><Sparkles size={21} /></span>
-          <p className="auth-credit-badge">[X] jetons offerts à l’inscription</p>
+          <p className="auth-credit-badge">10 jetons offerts à l’inscription</p>
           <h1>{isRegister ? 'Créez votre compte' : 'Bienvenue.'}</h1>
           <p className="auth-intro">
             {isRegister

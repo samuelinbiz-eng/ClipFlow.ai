@@ -160,7 +160,10 @@ export default function SubscriptionPage({ user }: { user: User }) {
           <span className="brand-mark"><Clapperboard size={19} /></span>
           <span>GemClip</span>
         </a>
-        <a className="subscription-back" href="/"><ArrowLeft size={15} /> Retour</a>
+        <span className="gc-api-pill">
+          <span className="dot" /> PayPal Checkout Sécurisé
+        </span>
+        <a className="subscription-back" href="/"><ArrowLeft size={15} /> Retour au Studio</a>
       </header>
 
       <section className="subscription-content">
