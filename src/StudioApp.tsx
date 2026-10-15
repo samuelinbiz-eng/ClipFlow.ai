@@ -57,7 +57,6 @@ export type MainScreen =
   | 'create'
   | 'generation'
   | 'editor'
-  | 'history'
   | 'account'
   | 'pricing'
   | 'error'
@@ -253,7 +252,6 @@ const TOOLS: { name: EditorTool; icon: typeof Scissors }[] = [
   { name: 'Recadrage', icon: LayoutGrid },
   { name: 'Effets', icon: Sparkles },
   { name: 'Titre', icon: Type },
-  { name: 'Historique', icon: History },
 ]
 
 function utcDay() {
@@ -444,14 +442,12 @@ function Header({
   tokens,
   plan,
   screen,
-  historyCount,
   onNavigate,
 }: {
   user: User
   tokens: number
   plan: 'free' | 'plus'
   screen: MainScreen
-  historyCount: number
   onNavigate: (screen: MainScreen) => void
 }) {
   const [avatarError, setAvatarError] = useState(false)
@@ -482,16 +478,9 @@ function Header({
           type="button"
           className={screen === 'create' ? 'is-active' : ''}
           onClick={() => onNavigate('create')}
+          title="Créer"
         >
-          <Plus size={14} /> Créer
-        </button>
-        <button
-          type="button"
-          className={screen === 'history' ? 'is-active' : ''}
-          onClick={() => onNavigate('history')}
-        >
-          <History size={14} /> Historique
-          {historyCount > 0 && <span className="badge">{historyCount}</span>}
+          <Plus size={18} />
         </button>
       </nav>
 
@@ -553,14 +542,6 @@ function BottomNavigation({
       >
         <Scissors size={19} />
         <span>Éditeur</span>
-      </button>
-      <button
-        className={screen === 'history' ? 'active' : ''}
-        type="button"
-        onClick={() => onNavigate('history')}
-      >
-        <History size={19} />
-        <span>Historique</span>
       </button>
       <button
         className={screen === 'account' ? 'active' : ''}
@@ -1190,7 +1171,6 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         tokens={data.tokens}
         plan={data.plan}
         screen={data.screen}
-        historyCount={data.history.length}
         onNavigate={navigate}
       />
       {storageWarning && (
@@ -1477,6 +1457,36 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
             <strong>Facebook Reels</strong>
           </section>
 
+          {data.history.length > 0 && (
+            <section className="gc-page-section" style={{ maxWidth: '1100px', margin: '2rem auto', padding: '0 1.5rem' }}>
+              <div className="gc-page-heading" style={{ marginBottom: '1.2rem' }}>
+                <div>
+                  <Chip>
+                    <History size={14} /> CLOUD FIRESTORE
+                  </Chip>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0.4rem 0 0.2rem' }}>Historique de vos Shorts</h2>
+                  <p style={{ color: 'var(--gc-text-muted)', fontSize: '0.9rem' }}>
+                    Retrouvez et rééditez toutes vos créations directement ici.
+                  </p>
+                </div>
+                <TokenPill tokens={data.tokens} />
+              </div>
+              <div className="gc-history-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1rem' }}>
+                {data.history
+                  .filter((item) => item.status === 'ready' || item.status === 'generating')
+                  .map((item) => (
+                    <ShortTile
+                      key={item.id}
+                      item={item}
+                      active={item.id === data.activeShortId}
+                      onEdit={() => reedit(item)}
+                      onDelete={() => handleDeleteShort(item.id)}
+                    />
+                  ))}
+              </div>
+            </section>
+          )}
+
           <section className="gc-features-section" id="features">
             <div className="gc-section-heading">
               <span>LE STUDIO SHORTS</span>
@@ -1609,7 +1619,6 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                     aria-label={name}
                     onClick={() => {
                       setEditorTool(name)
-                      if (name === 'Historique') navigate('history')
                     }}
                   >
                     <Icon size={20} strokeWidth={2} />
@@ -1676,27 +1685,13 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                 {editorTool === 'Transitions' ? (
                   <>
                     <div className="gc-panel-heading">
-                      <h2>{editorTool}</h2>
+                      <h2>Transitions</h2>
+                      <Button variant="primary" style={{ minHeight: 32, padding: '0 8px', fontSize: '10px' }} onClick={() => triggerTransition()} title="Tester">
+                        <Play size={12} fill="currentColor" /> Tester
+                      </Button>
                     </div>
 
-                    <p style={{ margin: '0 0 10px', fontSize: '11px', color: 'var(--gc-secondary)', lineHeight: 1.45 }}>
-                      Animez le passage d’une phrase à l’autre pour dynamiser le rythme de votre Short.
-                    </p>
-
-                    <Button
-                      variant="primary"
-                      onClick={() => triggerTransition()}
-                      style={{ width: '100%', minHeight: 36, marginBottom: '12px', fontSize: '11px' }}
-                    >
-                      <Play size={14} fill="currentColor" /> Tester l’animation sélectionnée
-                    </Button>
-
-                    <div className="gc-transition-library-header">
-                      <h3>Styles de transition disponibles</h3>
-                      <Chip>{TRANSITION_LIBRARY.length} styles</Chip>
-                    </div>
-
-                    <div className="gc-transition-grid">
+                    <div className="gc-transition-grid" style={{ marginTop: '4px' }}>
                       {TRANSITION_LIBRARY.map((t) => {
                         const Icon = t.icon
                         const isSelected = (activeShort.transition || 'Pop') === t.id
@@ -1709,20 +1704,17 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                               updateSubtitle('transitionSpeed', t.speedDefault)
                               triggerTransition()
                             }}
+                            title={t.description}
                           >
-                            <div className="gc-transition-card-head">
-                              <Icon size={16} />
-                              <span className="badge">{t.badge}</span>
-                            </div>
+                            <Icon size={15} />
                             <strong>{t.name}</strong>
-                            <p>{t.description}</p>
                           </div>
                         )
                       })}
                     </div>
 
-                    <label className="gc-slider-label" style={{ marginTop: '16px' }}>
-                      Vitesse de transition <span>{(activeShort.transitionSpeed || 0.35).toFixed(2)}s</span>
+                    <label className="gc-slider-label" style={{ marginTop: '10px' }}>
+                      Vitesse <span>{(activeShort.transitionSpeed || 0.35).toFixed(2)}s</span>
                       <input
                         type="range"
                         min="0.2"
@@ -1736,63 +1728,65 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                     </label>
 
                     {/* SECTIONS MANAGER */}
-                    <div className="gc-section-manager">
+                    <div className="gc-section-manager" style={{ marginTop: '10px' }}>
                       <div className="gc-section-manager-head">
-                        <strong>Sections de texte ({subtitleSections.length})</strong>
-                        <span style={{ fontSize: '9px', color: 'var(--gc-muted)' }}>
-                          Cliquez pour tester
-                        </span>
+                        <strong>Sections ({subtitleSections.length})</strong>
                       </div>
-                      {subtitleSections.map((sec, idx) => (
-                        <div
-                          key={`${sec}-${idx}`}
-                          className="gc-section-item"
-                          onClick={() => triggerTransition(idx)}
-                          style={{
-                            cursor: 'pointer',
-                            borderColor: activeSectionIndex === idx ? 'var(--gc-blue)' : undefined,
-                            backgroundColor:
-                              activeSectionIndex === idx ? 'var(--gc-blue-soft)' : '#fff',
-                          }}
-                        >
-                          <span className="gc-section-num">{idx + 1}</span>
-                          <span className="gc-section-text">{sec}</span>
-                          <span className="gc-section-trans-badge">
-                            ⚡ {activeShort.transition || 'Pop'}
-                          </span>
-                        </div>
-                      ))}
+                      <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'grid', gap: '4px', margin: '6px 0' }}>
+                        {subtitleSections.map((sec, idx) => (
+                          <div
+                            key={`${sec}-${idx}`}
+                            className="gc-section-item"
+                            onClick={() => triggerTransition(idx)}
+                            style={{
+                              cursor: 'pointer',
+                              borderColor: activeSectionIndex === idx ? 'var(--gc-blue)' : undefined,
+                              backgroundColor:
+                                activeSectionIndex === idx ? 'var(--gc-blue-soft)' : '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid var(--gc-border)',
+                            }}
+                          >
+                            <span style={{ minWidth: 16, fontSize: '9px', fontWeight: 700, color: 'var(--gc-blue)' }}>{idx + 1}</span>
+                            <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '10px' }}>{sec}</span>
+                            <Sparkles size={10} />
+                          </div>
+                        ))}
+                      </div>
                       {isEditingSections ? (
-                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <textarea
                             value={sectionDraft}
                             onChange={(e) => setSectionDraft(e.target.value)}
-                            rows={4}
+                            rows={3}
                             style={{
                               width: '100%',
-                              padding: '8px',
-                              borderRadius: '8px',
+                              padding: '6px',
+                              borderRadius: '6px',
                               border: '1px solid var(--gc-border)',
-                              fontSize: '11px',
+                              fontSize: '10px',
                               fontFamily: 'inherit',
                               resize: 'vertical',
-                              lineHeight: '1.4',
                             }}
                             placeholder="Une phrase par ligne..."
                           />
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '4px' }}>
                             <Button
                               variant="primary"
-                              style={{ flex: 1, minHeight: 30, fontSize: '10px' }}
+                              style={{ flex: 1, minHeight: 26, fontSize: '9px' }}
                               onClick={() => {
                                 updateSubtitle('text', sectionDraft)
                                 setIsEditingSections(false)
                               }}
                             >
-                              Appliquer les sections
+                              Appliquer
                             </Button>
                             <Button
-                              style={{ minHeight: 30, fontSize: '10px' }}
+                              style={{ minHeight: 26, fontSize: '9px' }}
                               onClick={() => setIsEditingSections(false)}
                             >
                               Annuler
@@ -1801,13 +1795,13 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
                         </div>
                       ) : (
                         <Button
-                          style={{ minHeight: 32, fontSize: '10px', marginTop: '6px' }}
+                          style={{ minHeight: 28, fontSize: '9px', width: '100%' }}
                           onClick={() => {
                             setSectionDraft(activeShort.text)
                             setIsEditingSections(true)
                           }}
                         >
-                          Modifier ou découper les phrases
+                          Éditer les phrases
                         </Button>
                       )}
                     </div>
@@ -2070,53 +2064,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
           />
         ))}
 
-      {data.screen === 'history' && (
-        <section className="gc-page-section">
-          <div className="gc-page-heading">
-            <div>
-              <Chip>
-                <History size={14} /> CLOUD FIRESTORE
-              </Chip>
-              <h1>Historique de vos Shorts</h1>
-              <p>
-                Retrouvez et rééditez toutes vos créations. Vos Shorts sont sauvegardés en direct
-                dans Firebase Cloud Firestore.
-              </p>
-            </div>
-            <TokenPill tokens={data.tokens} />
-          </div>
-          {data.history.length ? (
-            <div className="gc-history-grid">
-              {data.history
-                .filter((item) => item.status === 'ready' || item.status === 'generating')
-                .map((item) => (
-                  <ShortTile
-                    key={item.id}
-                    item={item}
-                    active={item.id === data.activeShortId}
-                    onEdit={() => reedit(item)}
-                    onDelete={() => handleDeleteShort(item.id)}
-                  />
-                ))}
-              <button
-                className="gc-new-short-tile"
-                type="button"
-                onClick={() => navigate('create')}
-              >
-                <Plus size={21} />
-                Nouveau Short
-              </button>
-            </div>
-          ) : (
-            <EmptyState
-              title="Votre historique est vide"
-              description="Créez votre premier Short avec Groq IA pour le retrouver ici."
-              action="Créer mon premier Short"
-              onAction={() => navigate('create')}
-            />
-          )}
-        </section>
-      )}
+      {/* History is now directly integrated into the creation section */}
 
       {data.screen === 'account' && (
         <section className="gc-page-section gc-account-page">

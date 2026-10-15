@@ -488,7 +488,7 @@
 .gc-undo-actions .gc-button { width: 40px; min-height: 40px; padding: 0; }
 .gc-editor-topbar > .gc-button-primary { min-height: 44px; }
 .gc-editor-topbar > .gc-button-primary .gc-chip { min-height: 22px; color: #fff; border-color: #ffffff55; background: #ffffff20; }
-.gc-editor-main { min-height: 0; display: grid; grid-template-columns: 76px minmax(250px, 1fr) minmax(265px, 330px); align-items: stretch; gap: 17px; padding: 14px 0; }
+.gc-editor-main { min-height: 0; display: grid; grid-template-columns: 76px minmax(250px, 1fr) minmax(200px, 260px); align-items: stretch; gap: 17px; padding: 14px 0; }
 .gc-tool-rail { display: grid; align-content: start; gap: 4px; padding: 7px 5px; border: 1px solid var(--gc-border); border-radius: 14px; background: #fff; }
 .gc-tool-rail button { min-height: 58px; display: grid; justify-items: center; align-content: center; gap: 5px; border: 0; border-radius: 10px; color: var(--gc-muted); background: transparent; font-size: 9px; cursor: pointer; }
 .gc-tool-rail button.active { color: #fff; background: var(--gc-ink); font-weight: 700; }
@@ -815,4 +815,34 @@
   .gc-options { grid-template-columns: 1fr; }
   .gc-unlocks > div { grid-template-columns: 1fr; }
   .gc-unlocks .gc-card { display: flex; align-items: baseline; justify-content: space-between; }
+}
+
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > aside:nth-of-type(1) > div:nth-of-type(3) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > section:nth-of-type(1) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > nav:nth-of-type(1) > button:nth-of-type(7) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > nav:nth-of-type(1) > button:nth-of-type(4) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > nav:nth-of-type(1) > button:nth-of-type(5) {
+  display: none;
+}
+div#root:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(1) > header:nth-of-type(1) {
+  position: relative;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px 0;
+  gap: 6px;
 }
