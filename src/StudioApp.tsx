@@ -7,7 +7,6 @@ import {
   ArrowRight,
   AudioLines,
   Check,
-  CheckCircle2,
   Clapperboard,
   Copy,
   Download,
@@ -657,8 +656,8 @@ function StudioApp({ user, initialScreen }: { user: User | null; initialScreen?:
   const [data, setData] = useState<StudioState>(
     initialScreen ? { ...initial.value, screen: initialScreen } : initial.value,
   )
-  const [storageWarning, setStorageWarning] = useState(initial.warning)
-  const [notice, setNotice] = useState('')
+  const [, setStorageWarning] = useState(initial.warning)
+  const [, setNotice] = useState('')
   const [editorTool, setEditorTool] = useState<EditorTool>('Transitions')
   const [source, setSource] = useState(data.sourceDraft)
   const [fileName, setFileName] = useState('')
@@ -1245,21 +1244,6 @@ function StudioApp({ user, initialScreen }: { user: User | null; initialScreen?:
         screen={data.screen}
         onNavigate={navigate}
       />
-      {storageWarning && (
-        <div className="gc-storage-warning" role="status">
-          <AlertCircle size={16} />
-          {storageWarning}
-        </div>
-      )}
-      {notice && (
-        <div className="gc-notice" role="status">
-          <CheckCircle2 size={16} />
-          {notice}
-          <button type="button" onClick={() => setNotice('')} aria-label="Fermer">
-            ×
-          </button>
-        </div>
-      )}
 
       {data.screen === 'create' && (
         <>
@@ -1641,10 +1625,15 @@ function StudioApp({ user, initialScreen }: { user: User | null; initialScreen?:
                 )
               })}
             </ol>
-            <div className="gc-generation-actions">
-              <Button onClick={cancelGeneration}>Annuler</Button>
+            <div className="gc-generation-actions" style={{ marginTop: '20px' }}>
+              <Button onClick={cancelGeneration} variant="secondary">Annuler la création</Button>
             </div>
           </Card>
+
+          <div className="gc-generation-preview">
+            <PhonePreview caption={activeShort.text} settings={activeShort} subtitle={activeShort.enabled} />
+            <p>Rendu vertical 9:16 en direct par GemClip IA</p>
+          </div>
         </section>
       )}
 
