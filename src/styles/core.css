@@ -207,3 +207,66 @@ button { border-radius: 12px; }
   opacity: .6;
   cursor: wait;
 }
+
+[data-theme="dark"] {
+  --paypal-navy: #f8fafc;
+  --paypal-deep-blue: #e2e8f0;
+  --paypal-blue: #3b82f6;
+  --paypal-blue-hover: #60a5fa;
+  --paypal-light-blue: #93c5fd;
+  --paypal-soft-blue: rgba(59, 130, 246, 0.15);
+  --paypal-soft-blue-border: #1e3a8a;
+
+  --paypal-gold: #fbbf24;
+  --paypal-gold-hover: #f59e0b;
+  --paypal-gold-text: #0f172a;
+
+  --paypal-bg: #090d16;
+  --paypal-card: #111827;
+  --paypal-card-border: #1f2937;
+  --paypal-subtle-border: #1e293b;
+
+  --paypal-text-main: #f9fafb;
+  --paypal-text-secondary: #9ca3af;
+  --paypal-text-muted: #6b7280;
+
+  --gc-ink: #f9fafb;
+  --gc-secondary: #9ca3af;
+  --gc-muted: #6b7280;
+  --gc-border: #1f2937;
+  --gc-white: #111827;
+  --gc-blue: #3b82f6;
+  --gc-blue-soft: rgba(59, 130, 246, 0.15);
+
+  color: var(--paypal-text-main);
+  background: var(--paypal-bg);
+}
+
+[data-theme="dark"] body::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+[data-theme="dark"] .gc-header,
+[data-theme="dark"] .topbar,
+[data-theme="dark"] .gc-card,
+[data-theme="dark"] .gc-editor-panel,
+[data-theme="dark"] .gc-tool-rail,
+[data-theme="dark"] .gc-create-customizer,
+[data-theme="dark"] .gc-timeline,
+[data-theme="dark"] .gc-short-tile-preview,
+[data-theme="dark"] .auth-card,
+[data-theme="dark"] .subscription-card {
+  background: var(--paypal-card);
+  border-color: var(--paypal-card-border);
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  color: var(--paypal-text-main);
+  background: #1f2937;
+  border-color: var(--paypal-card-border);
+}
+

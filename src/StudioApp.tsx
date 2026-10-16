@@ -32,10 +32,12 @@ import {
   Sparkles,
   Subtitles,
   Trash2,
+  Sun,
   Type,
   Undo2,
   WandSparkles,
   Zap,
+  Moon,
 } from 'lucide-react'
 import { signOut } from 'firebase/auth'
 import { getFirebaseAuth, getFirebaseFirestore } from './firebase'
@@ -451,6 +453,20 @@ function Header({
   onNavigate: (screen: MainScreen) => void
 }) {
   const [avatarError, setAvatarError] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const stored = window.localStorage.getItem('gemclip-theme')
+    return stored === 'dark' ? 'dark' : 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    window.localStorage.setItem('gemclip-theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme((curr) => (curr === 'light' ? 'dark' : 'light'))
+  }
+
   const avatarLetters = (user.displayName || user.email || 'G')
     .split(/\s+/)
     .slice(0, 2)
@@ -485,6 +501,27 @@ function Header({
       </nav>
 
       <div className="gc-header-actions">
+        <button
+          type="button"
+          className="gc-theme-toggle"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Activer le mode clair' : 'Activer le mode sombre'}
+          title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+          style={{
+            width: 38,
+            height: 38,
+            display: 'grid',
+            placeItems: 'center',
+            border: '1px solid var(--gc-border)',
+            borderRadius: 11,
+            background: 'var(--gc-white)',
+            color: 'var(--gc-ink)',
+            cursor: 'pointer',
+          }}
+        >
+          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
+
         {plan === 'free' ? (
           <Button
             className="gc-subscribe-button"
