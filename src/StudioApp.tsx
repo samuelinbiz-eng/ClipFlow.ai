@@ -207,6 +207,11 @@ type ShortItem = SubtitleSettings & {
   hook?: string
   explanation?: string
   tags?: string[]
+  audioTrack?: string
+  audioVolume?: number
+  cropMode?: string
+  visualFilter?: string
+  speedRate?: number
 }
 
 type StudioState = {
@@ -2006,34 +2011,144 @@ function StudioApp({ user, initialScreen }: { user: User | null; initialScreen?:
                     </div>
                   </>
                 ) : editorTool === 'Extrait' ? (
-                  <div className="gc-tool-placeholder">
-                    <Scissors size={21} />
-                    <h2>Extrait</h2>
-                    <p>Durée de l’extrait : {activeShort.durationSeconds} secondes.</p>
-                    <Button
-                      onClick={() =>
-                        updateActiveShort({
-                          durationSeconds:
-                            activeShort.durationSeconds === 45 ? 30 : 45,
-                        })
-                      }
-                    >
-                      Alterner 30s / 45s
-                    </Button>
-                  </div>
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>DÉCOUPE IA</span><h2>Extrait & Durée</h2></div>
+                    </div>
+                    <EditorChoice
+                      title="Durée du Short"
+                      choices={['30s', '45s', '60s']}
+                      value={`${activeShort.durationSeconds}s`}
+                      onChange={(val) => updateActiveShort({ durationSeconds: parseInt(val) })}
+                    />
+                    <p style={{ color: 'var(--gc-muted)', fontSize: '11px', marginTop: '14px', lineHeight: 1.5 }}>
+                      Groq IA extrait automatiquement le passage le plus engageant de cette durée.
+                    </p>
+                  </>
                 ) : editorTool === 'Format' ? (
-                  <div className="gc-tool-placeholder">
-                    <Smartphone size={21} />
-                    <h2>Format Vertical</h2>
-                    <p>Format vertical 9:16 standard pour Shorts, TikTok & Reels · {data.resolution}p</p>
-                    <Chip active>9:16 Plein écran</Chip>
-                  </div>
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>RÉSOLUTION</span><h2>Format & Export</h2></div>
+                    </div>
+                    <EditorChoice
+                      title="Définition"
+                      choices={['720p', '1080p']}
+                      value={`${data.resolution}p`}
+                      onChange={(val) => setData((curr) => ({ ...curr, resolution: parseInt(val) as 720 | 1080 }))}
+                    />
+                    <p style={{ color: 'var(--gc-muted)', fontSize: '11px', marginTop: '14px', lineHeight: 1.5 }}>
+                      Format vertical 9:16 optimisé pour l’algorithme de YouTube Shorts, TikTok et Instagram Reels.
+                    </p>
+                  </>
+                ) : editorTool === 'Audio' ? (
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>BANDE SON</span><h2>Musique & Audio</h2></div>
+                    </div>
+                    <label className="gc-select-label">
+                      Piste musicale
+                      <select
+                        value={activeShort.audioTrack || 'Lo-Fi Chill'}
+                        onChange={(e) => updateActiveShort({ audioTrack: e.target.value })}
+                      >
+                        <option value="Lo-Fi Chill">Lo-Fi Chill (Tendance)</option>
+                        <option value="Upbeat Energetique">Upbeat Énergétique (TikTok)</option>
+                        <option value="Cinematique">Cinématique Émotionnelle</option>
+                        <option value="Aucune">Aucune (Voix seule)</option>
+                      </select>
+                    </label>
+                    <label className="gc-slider-label" style={{ marginTop: '14px' }}>
+                      Volume musique <span>{activeShort.audioVolume ?? 30}%</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={activeShort.audioVolume ?? 30}
+                        onChange={(e) => updateActiveShort({ audioVolume: Number(e.target.value) })}
+                      />
+                    </label>
+                  </>
+                ) : editorTool === 'Recadrage' ? (
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>CADRAGE VERTICAL</span><h2>Recadrage 9:16</h2></div>
+                    </div>
+                    <EditorChoice
+                      title="Mode de suivi"
+                      choices={['Centré Auto', 'Visage (IA)', 'Plein Cadre']}
+                      value={activeShort.cropMode || 'Centré Auto'}
+                      onChange={(val) => updateActiveShort({ cropMode: val })}
+                    />
+                    <p style={{ color: 'var(--gc-muted)', fontSize: '11px', marginTop: '12px', lineHeight: 1.5 }}>
+                      Le suivi automatique maintient le sujet ou le visage au centre de l’écran vertical 9:16.
+                    </p>
+                  </>
+                ) : editorTool === 'Effets' ? (
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>FILTRES & RYTHME</span><h2>Effets Visuels</h2></div>
+                    </div>
+                    <EditorChoice
+                      title="Filtre couleur"
+                      choices={['Normal', 'Néon', 'Cinéma', 'Glitch']}
+                      value={activeShort.visualFilter || 'Normal'}
+                      onChange={(val) => updateActiveShort({ visualFilter: val })}
+                    />
+                    <label className="gc-select-label" style={{ marginTop: '14px' }}>
+                      Vitesse de lecture
+                      <select
+                        value={activeShort.speedRate || 1}
+                        onChange={(e) => updateActiveShort({ speedRate: Number(e.target.value) })}
+                      >
+                        <option value={1}>1.0x (Normal)</option>
+                        <option value={1.15}>1.15x (Dynamique)</option>
+                        <option value={1.25}>1.25x (Rapide)</option>
+                      </select>
+                    </label>
+                  </>
+                ) : editorTool === 'Titre' ? (
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>MÉTADONNÉES</span><h2>Titre & Filigrane</h2></div>
+                    </div>
+                    <label className="gc-select-label">
+                      Titre du Short
+                      <input
+                        type="text"
+                        value={activeShort.title}
+                        onChange={(e) => updateActiveShort({ title: e.target.value })}
+                        style={{ minHeight: 40, padding: '0 10px', borderRadius: 9, border: '1px solid var(--gc-border)', fontSize: '12px', background: '#fff', color: 'var(--gc-ink)' }}
+                      />
+                    </label>
+                    <p style={{ color: 'var(--gc-muted)', fontSize: '11px', marginTop: '12px', lineHeight: 1.5 }}>
+                      Le titre est utilisé pour l’export et la sauvegarde dans Cloud Firestore.
+                    </p>
+                  </>
                 ) : (
-                  <div className="gc-tool-placeholder">
-                    <WandSparkles size={21} />
-                    <h2>{editorTool}</h2>
-                    <p>Paramètres synchronisés directement avec Cloud Firestore.</p>
-                  </div>
+                  <>
+                    <div className="gc-panel-heading">
+                      <div><span>VOS CRÉATIONS</span><h2>Historique des Shorts</h2></div>
+                    </div>
+                    <div style={{ display: 'grid', gap: '8px', maxHeight: '320px', overflowY: 'auto' }}>
+                      {data.history.map((h) => (
+                        <div
+                          key={h.id}
+                          onClick={() => reedit(h)}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '10px',
+                            border: h.id === activeShort.id ? '2px solid var(--gc-blue)' : '1px solid var(--gc-border)',
+                            background: h.id === activeShort.id ? 'var(--gc-blue-soft)' : '#fff',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                          }}
+                        >
+                          <strong>{h.title}</strong>
+                          <div style={{ color: 'var(--gc-muted)', fontSize: '9px' }}>{h.durationSeconds}s · {h.status}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </aside>
             </div>
