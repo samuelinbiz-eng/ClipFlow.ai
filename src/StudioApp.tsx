@@ -446,7 +446,7 @@ function Header({
   screen,
   onNavigate,
 }: {
-  user: User
+  user: User | null
   tokens: number
   plan: 'free' | 'plus'
   screen: MainScreen
@@ -466,13 +466,6 @@ function Header({
   const toggleTheme = () => {
     setTheme((curr) => (curr === 'light' ? 'dark' : 'light'))
   }
-
-  const avatarLetters = (user.displayName || user.email || 'G')
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
 
   return (
     <header className="gc-header">
@@ -522,34 +515,47 @@ function Header({
           {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
 
-        {plan === 'free' ? (
-          <Button
-            className="gc-subscribe-button"
-            onClick={() => onNavigate('pricing')}
-            style={{ padding: '0 12px', minHeight: 36, fontSize: '11px' }}
-          >
-            <Zap size={14} /> Passer à Plus
-          </Button>
+        {user ? (
+          <>
+            {plan === 'free' ? (
+              <Button
+                className="gc-subscribe-button"
+                onClick={() => onNavigate('pricing')}
+                style={{ padding: '0 12px', minHeight: 36, fontSize: '11px' }}
+              >
+                <Zap size={14} /> Passer à Plus
+              </Button>
+            ) : (
+              <Chip active>Plan Plus</Chip>
+            )}
+            <TokenPill tokens={tokens} />
+            <button
+              className={`gc-avatar ${screen === 'account' ? 'selected' : ''}`}
+              type="button"
+              onClick={() => onNavigate('account')}
+              aria-label="Ouvrir le compte"
+              style={{
+                outline: screen === 'account' ? '2px solid var(--gc-blue)' : 'none',
+                outlineOffset: '2px',
+              }}
+            >
+              {user.photoURL && !avatarError ? (
+                <img src={user.photoURL} alt="" onError={() => setAvatarError(true)} />
+              ) : (
+                (user.displayName || user.email || 'G').slice(0, 2).toUpperCase()
+              )}
+            </button>
+          </>
         ) : (
-          <Chip active>Plan Plus</Chip>
+          <>
+            <a href="/login" className="gc-button gc-button-secondary" style={{ minHeight: 36, padding: '0 14px', fontSize: '11px', textDecoration: 'none' }}>
+              Connexion
+            </a>
+            <a href="/register" className="gc-button gc-button-primary" style={{ minHeight: 36, padding: '0 14px', fontSize: '11px', textDecoration: 'none' }}>
+              Créer un compte <ArrowRight size={14} />
+            </a>
+          </>
         )}
-        <TokenPill tokens={tokens} />
-        <button
-          className={`gc-avatar ${screen === 'account' ? 'selected' : ''}`}
-          type="button"
-          onClick={() => onNavigate('account')}
-          aria-label="Ouvrir le compte"
-          style={{
-            outline: screen === 'account' ? '2px solid var(--gc-blue)' : 'none',
-            outlineOffset: '2px',
-          }}
-        >
-          {user.photoURL && !avatarError ? (
-            <img src={user.photoURL} alt="" onError={() => setAvatarError(true)} />
-          ) : (
-            avatarLetters
-          )}
-        </button>
       </div>
     </header>
   )
@@ -646,7 +652,7 @@ function ShortTile({
   )
 }
 
-function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainScreen }) {
+function StudioApp({ user, initialScreen }: { user: User | null; initialScreen?: MainScreen }) {
   const [initial] = useState(readStudioState)
   const [data, setData] = useState<StudioState>(
     initialScreen ? { ...initial.value, screen: initialScreen } : initial.value,
@@ -720,6 +726,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
 
   // 2. Synchronize user profile & subscribe to user's Shorts from Cloud Firestore
   useEffect(() => {
+    if (!user) return
     void syncUserProfile(user)
     const unsubscribe = subscribeUserShorts(
       user.uid,
@@ -779,6 +786,17 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
 
   // 4. Update profile in state
   useEffect(() => {
+    if (!user) {
+      setData((current) => ({
+        ...current,
+        profile: {
+          displayName: 'Visiteur',
+          email: 'visiteur@gemclip.ai',
+          photoURL: null,
+        },
+      }))
+      return
+    }
     setData((current) => ({
       ...current,
       profile: {
@@ -852,24 +870,26 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
         }))
 
         // Persist completed Short to Cloud Firestore
-        void saveShortToFirestore(user.uid, {
-          task_id: taskId,
-          status: 'completed',
-          progress: 100,
-          stage: 'Terminé',
-          titre: result.title.slice(0, 200),
-          explication: result.caption.slice(0, 1000),
-          source: activeShort.source.slice(0, 500),
-          duration_seconds: result.durationSeconds || data.duration,
-          resolution: data.resolution,
-          aspect_ratio: '9:16',
-          subtitles: activeShort.enabled,
-          subtitle_color: activeShort.color,
-          subtitle_size: String(activeShort.size),
-          subtitle_position: activeShort.position,
-          credit_cost: SHORT_COST,
-          owner_uid: user.uid,
-        })
+        if (user) {
+          void saveShortToFirestore(user.uid, {
+            task_id: taskId,
+            status: 'completed',
+            progress: 100,
+            stage: 'Terminé',
+            titre: result.title.slice(0, 200),
+            explication: result.caption.slice(0, 1000),
+            source: activeShort.source.slice(0, 500),
+            duration_seconds: result.durationSeconds || data.duration,
+            resolution: data.resolution,
+            aspect_ratio: '9:16',
+            subtitles: activeShort.enabled,
+            subtitle_color: activeShort.color,
+            subtitle_size: String(activeShort.size),
+            subtitle_position: activeShort.position,
+            credit_cost: SHORT_COST,
+            owner_uid: user.uid,
+          })
+        }
 
         if (result.notice) {
           setNotice(result.notice)
@@ -917,21 +937,28 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     }))
 
     // Sync updates to Firestore
-    void saveShortToFirestore(user.uid, {
-      task_id: activeShort.id,
-      titre: values.title ?? activeShort.title,
-      explication: values.text ?? activeShort.text,
-      subtitle_color: values.color ?? activeShort.color,
-      subtitle_size: String(values.size ?? activeShort.size),
-      subtitle_position: values.position ?? activeShort.position,
-      subtitles: values.enabled ?? activeShort.enabled,
-      duration_seconds: values.durationSeconds ?? activeShort.durationSeconds,
-    })
+    if (user) {
+      void saveShortToFirestore(user.uid, {
+        task_id: activeShort.id,
+        titre: values.title ?? activeShort.title,
+        explication: values.text ?? activeShort.text,
+        subtitle_color: values.color ?? activeShort.color,
+        subtitle_size: String(values.size ?? activeShort.size),
+        subtitle_position: values.position ?? activeShort.position,
+        subtitles: values.enabled ?? activeShort.enabled,
+        duration_seconds: values.durationSeconds ?? activeShort.durationSeconds,
+      })
+    }
   }
 
   function startGeneration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setNotice('')
+    if (!user) {
+      setNotice('Veuillez vous connecter ou créer un compte pour lancer l’IA Groq et enregistrer vos Shorts.')
+      window.location.assign('/register')
+      return
+    }
     const sourceValue = fileName ? `Fichier : ${fileName}` : source.trim()
     if (data.tokens < SHORT_COST) {
       navigate('exhausted')
@@ -1029,8 +1056,10 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       history: current.history.filter((h) => h.id !== shortId),
       activeShortId: current.activeShortId === shortId ? null : current.activeShortId,
     }))
-    void deleteShortFromFirestore(user.uid, shortId)
-    setNotice('Short supprimé de votre historique et de Cloud Firestore.')
+    if (user) {
+      void deleteShortFromFirestore(user.uid, shortId)
+    }
+    setNotice('Short supprimé de votre historique.')
   }
 
   function duplicateShort() {
@@ -1048,22 +1077,24 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
       history: [copy, ...current.history],
       activeShortId: copy.id,
     }))
-    void saveShortToFirestore(user.uid, {
-      task_id: copyId,
-      status: 'completed',
-      titre: copy.title,
-      explication: copy.text,
-      source: copy.source,
-      duration_seconds: copy.durationSeconds,
-      resolution: data.resolution,
-      aspect_ratio: '9:16',
-      subtitles: copy.enabled,
-      subtitle_color: copy.color,
-      subtitle_size: String(copy.size),
-      subtitle_position: copy.position,
-      credit_cost: 0,
-      owner_uid: user.uid,
-    })
+    if (user) {
+      void saveShortToFirestore(user.uid, {
+        task_id: copyId,
+        status: 'completed',
+        titre: copy.title,
+        explication: copy.text,
+        source: copy.source,
+        duration_seconds: copy.durationSeconds,
+        resolution: data.resolution,
+        aspect_ratio: '9:16',
+        subtitles: copy.enabled,
+        subtitle_color: copy.color,
+        subtitle_size: String(copy.size),
+        subtitle_position: copy.position,
+        credit_cost: 0,
+        owner_uid: user.uid,
+      })
+    }
     setNotice('Une copie du Short a été ajoutée et enregistrée.')
   }
 
@@ -1152,6 +1183,10 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
   }
 
   async function upgradePlan() {
+    if (!user) {
+      window.location.assign('/register')
+      return
+    }
     setBusy(true)
     try {
       const db = getFirebaseFirestore()
@@ -1198,7 +1233,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
     }
   }
 
-  const profileName = user.displayName || user.email?.split('@')[0] || 'Créateur GemClip'
+  const profileName = user?.displayName || user?.email?.split('@')[0] || 'Visiteur'
   const isEditorMode = data.screen === 'editor'
 
   return (
@@ -2116,7 +2151,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
 
           <Card className="gc-account-card">
             <div className="gc-account-avatar">
-              {user.photoURL ? (
+              {user?.photoURL ? (
                 <img src={user.photoURL} alt="" />
               ) : (
                 profileName.slice(0, 1).toUpperCase()
@@ -2124,7 +2159,7 @@ function StudioApp({ user, initialScreen }: { user: User; initialScreen?: MainSc
             </div>
             <div>
               <h2>{profileName}</h2>
-              <p>{user.email}</p>
+              <p>{user?.email || 'visiteur@gemclip.ai'}</p>
             </div>
           </Card>
 
